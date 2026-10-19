@@ -13,27 +13,24 @@ class _SignUpPageState extends State<SignUpPage> {
   final firstName = TextEditingController();
   final lastName = TextEditingController();
   final phone = TextEditingController();
-  final email = TextEditingController();
 
   String? firstNameError;
   String? lastNameError;
   String? phoneError;
-  String? emailError;
 
   Timer? _debouncePhone;
-  Timer? _debounceEmail;
 
   Future<void> sendPhoneOTP(String phoneNumber) async {
     String formattedPhone;
 
     if (phoneNumber.startsWith('05')) {
-      formattedPhone = "+966${phoneNumber.substring(1)}";
+      formattedPhone = '+966${phoneNumber.substring(1)}';
     } else if (phoneNumber.startsWith('5')) {
-      formattedPhone = "+966$phoneNumber";
+      formattedPhone = '+966$phoneNumber';
     } else if (phoneNumber.startsWith('+966')) {
       formattedPhone = phoneNumber;
     } else {
-      formattedPhone = "+966$phoneNumber";
+      formattedPhone = '+966$phoneNumber';
     }
 
     await FirebaseAuth.instance.verifyPhoneNumber(
@@ -42,24 +39,27 @@ class _SignUpPageState extends State<SignUpPage> {
       verificationCompleted: (_) {},
 
       verificationFailed: (e) {
-        print("ERROR CODE: ${e.code}");
-        print("ERROR MSG: ${e.message}");
+        print('ERROR CODE: ${e.code}');
+        print('ERROR MSG: ${e.message}');
+
+        if (!mounted) return;
 
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(e.message ?? "فشل إرسال الكود")));
+        ).showSnackBar(SnackBar(content: Text(e.message ?? 'فشل إرسال الكود')));
       },
 
       codeSent: (verificationId, _) {
+        if (!mounted) return;
+
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => OtpPage(
               correctCode: verificationId,
-              firstName: firstName.text,
-              lastName: lastName.text,
-              email: email.text,
-              phone: phone.text,
+              firstName: firstName.text.trim(),
+              lastName: lastName.text.trim(),
+              phone: phone.text.trim(),
               isLogin: false,
             ),
           ),
@@ -75,69 +75,62 @@ class _SignUpPageState extends State<SignUpPage> {
       firstNameError = null;
       lastNameError = null;
       phoneError = null;
-      emailError = null;
     });
 
     bool hasError = false;
 
-    // الاسم الأول
-    if (firstName.text.isEmpty) {
-      firstNameError = "الرجاء تعبئة الحقل";
+    // التحقق من الاسم الأول
+    if (firstName.text.trim().isEmpty) {
+      firstNameError = 'الرجاء تعبئة الحقل';
       hasError = true;
-    } else if (firstName.text.length < 2 || firstName.text.length > 50) {
-      firstNameError = "يجب أن يكون الاسم بين 2 و 50 حرف";
-      hasError = true;
-    }
-
-    // الاسم الأخير
-    if (lastName.text.isEmpty) {
-      lastNameError = "الرجاء تعبئة الحقل";
-      hasError = true;
-    } else if (lastName.text.length < 2 || lastName.text.length > 50) {
-      lastNameError = "يجب أن يكون الاسم بين 2 و 50 حرف";
+    } else if (firstName.text.trim().length < 2 ||
+        firstName.text.trim().length > 50) {
+      firstNameError = 'يجب أن يكون الاسم بين 2 و 50 حرف';
       hasError = true;
     }
 
-    // الإيميل
-    if (email.text.isEmpty) {
-      emailError = "الرجاء تعبئة الحقل";
+    // التحقق من الاسم الأخير
+    if (lastName.text.trim().isEmpty) {
+      lastNameError = 'الرجاء تعبئة الحقل';
       hasError = true;
-    } else if (!RegExp(
-      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-    ).hasMatch(email.text)) {
-      emailError = "الإيميل غير صحيح";
-      hasError = true;
-    }
-
-    // رقم الجوال
-    if (phone.text.isEmpty) {
-      phoneError = "الرجاء تعبئة الحقل";
-      hasError = true;
-    } else if (phone.text.length != 10 || !phone.text.startsWith('05')) {
-      phoneError = "رقم الجوال غير صحيح";
+    } else if (lastName.text.trim().length < 2 ||
+        lastName.text.trim().length > 50) {
+      lastNameError = 'يجب أن يكون الاسم بين 2 و 50 حرف';
       hasError = true;
     }
 
-    // التحقق من التكرار
+    // التحقق من رقم الجوال
+    final phoneNumber = phone.text.trim();
+
+    if (phoneNumber.isEmpty) {
+      phoneError = 'الرجاء تعبئة الحقل';
+      hasError = true;
+    } else if (!RegExp(r'^05\d{8}$').hasMatch(phoneNumber)) {
+      phoneError = 'رقم الجوال غير صحيح';
+      hasError = true;
+    }
+
+    // التحقق من أن رقم الجوال غير مسجل مسبقًا
     if (!hasError) {
-      var phoneCheck = await FirebaseFirestore.instance
-          .collection('Users')
-          .where('phone', isEqualTo: phone.text.trim())
-          .get();
+      try {
+        final phoneCheck = await FirebaseFirestore.instance
+            .collection('Users')
+            .where('phone', isEqualTo: phoneNumber)
+            .get();
 
-      if (phoneCheck.docs.isNotEmpty) {
-        phoneError = "رقم الجوال مستخدم مسبقاً";
-        hasError = true;
-      }
+        if (phoneCheck.docs.isNotEmpty) {
+          phoneError = 'رقم الجوال مستخدم مسبقاً';
+          hasError = true;
+        }
+      } catch (e) {
+        if (!mounted) return;
 
-      var emailCheck = await FirebaseFirestore.instance
-          .collection('Users')
-          .where('email', isEqualTo: email.text.trim())
-          .get();
-
-      if (emailCheck.docs.isNotEmpty) {
-        emailError = "الإيميل مستخدم مسبقاً";
-        hasError = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر التحقق من رقم الجوال، حاول مرة أخرى'),
+          ),
+        );
+        return;
       }
     }
 
@@ -146,13 +139,30 @@ class _SignUpPageState extends State<SignUpPage> {
       return;
     }
 
-    await sendPhoneOTP(phone.text.trim());
+    try {
+      await sendPhoneOTP(phoneNumber);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('حدث خطأ أثناء إرسال رمز التحقق')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _debouncePhone?.cancel();
+    firstName.dispose();
+    lastName.dispose();
+    phone.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFF3F4F6),
+      backgroundColor: const Color(0xFFF3F4F6),
       body: SingleChildScrollView(
         child: Column(
           children: [
@@ -161,7 +171,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 Container(
                   height: 280,
                   width: double.infinity,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     image: DecorationImage(
                       image: AssetImage('assets/images/madad_icon.jpeg'),
                       fit: BoxFit.cover,
@@ -172,7 +182,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   top: 40,
                   left: 10,
                   child: IconButton(
-                    icon: Icon(Icons.arrow_back, color: Colors.white),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
                     onPressed: () {
                       Navigator.pop(context);
                     },
@@ -181,34 +191,40 @@ class _SignUpPageState extends State<SignUpPage> {
               ],
             ),
 
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
 
-            Text(
-              "البيانات الشخصية",
+            const Text(
+              'البيانات الشخصية',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
 
-            buildField("الاسم الأول", firstName, Icons.person, firstNameError),
-            buildField("الاسم الاخير", lastName, Icons.person, lastNameError),
-            buildField("الإيميل", email, Icons.email, emailError),
-            buildField("رقم الجوال", phone, Icons.phone, phoneError),
+            buildField('الاسم الأول', firstName, Icons.person, firstNameError),
 
-            SizedBox(height: 20),
+            buildField('الاسم الأخير', lastName, Icons.person, lastNameError),
+
+            buildField('رقم الجوال', phone, Icons.phone, phoneError),
+
+            const SizedBox(height: 20),
 
             Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: ElevatedButton(
                 onPressed: signup,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFF0F5C63),
-                  minimumSize: Size(double.infinity, 55),
+                  backgroundColor: const Color(0xFF0F5C63),
+                  minimumSize: const Size(double.infinity, 55),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                child: Text("إنشاء الحساب"),
+                child: const Text(
+                  'إنشاء الحساب',
+                  style: TextStyle(color: Colors.white, fontSize: 16),
+                ),
               ),
             ),
+
+            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -222,81 +238,76 @@ class _SignUpPageState extends State<SignUpPage> {
     String? errorText,
   ) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(label),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
 
           Directionality(
             textDirection: TextDirection.rtl,
             child: TextField(
               controller: controller,
               textAlign: TextAlign.right,
+              keyboardType: controller == phone
+                  ? TextInputType.phone
+                  : TextInputType.name,
+
               onChanged: (value) {
-                setState(() {
-                  if (controller == phone && value.isNotEmpty)
-                    phoneError = null;
-                  if (controller == email && value.isNotEmpty)
-                    emailError = null;
-                });
-
-                // تحقق الجوال
                 if (controller == phone) {
-                  if (_debouncePhone?.isActive ?? false)
-                    _debouncePhone!.cancel();
-                  _debouncePhone = Timer(Duration(milliseconds: 500), () async {
-                    var result = await FirebaseFirestore.instance
-                        .collection('Users')
-                        .where('phone', isEqualTo: value.trim())
-                        .get();
-
-                    if (result.docs.isNotEmpty) {
-                      setState(() {
-                        phoneError = "رقم الجوال مستخدم مسبقاً";
-                      });
-                    }
+                  setState(() {
+                    phoneError = null;
                   });
-                }
 
-                // تحقق الإيميل
-                if (controller == email) {
-                  if (_debounceEmail?.isActive ?? false)
-                    _debounceEmail!.cancel();
-                  _debounceEmail = Timer(Duration(milliseconds: 500), () async {
-                    if (!RegExp(
-                      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                    ).hasMatch(value.trim())) {
-                      setState(() {
-                        emailError = "الإيميل غير صحيح";
-                      });
-                      return;
-                    } else {
-                      setState(() {
-                        emailError = null;
-                      });
-                    }
+                  _debouncePhone?.cancel();
 
-                    var result = await FirebaseFirestore.instance
-                        .collection('Users')
-                        .where('email', isEqualTo: value.trim())
-                        .get();
+                  final phoneNumber = value.trim();
 
-                    if (result.docs.isNotEmpty) {
-                      setState(() {
-                        emailError = "الإيميل مستخدم مسبقاً";
-                      });
+                  if (!RegExp(r'^05\d{8}$').hasMatch(phoneNumber)) {
+                    return;
+                  }
+
+                  _debouncePhone = Timer(
+                    const Duration(milliseconds: 500),
+                    () async {
+                      try {
+                        final result = await FirebaseFirestore.instance
+                            .collection('Users')
+                            .where('phone', isEqualTo: phoneNumber)
+                            .get();
+
+                        if (!mounted || phone.text.trim() != phoneNumber) {
+                          return;
+                        }
+
+                        setState(() {
+                          phoneError = result.docs.isNotEmpty
+                              ? 'رقم الجوال مستخدم مسبقاً'
+                              : null;
+                        });
+                      } catch (e) {
+                        debugPrint('Phone duplicate check failed: $e');
+                      }
+                    },
+                  );
+                } else {
+                  setState(() {
+                    if (controller == firstName) {
+                      firstNameError = null;
+                    } else if (controller == lastName) {
+                      lastNameError = null;
                     }
                   });
                 }
               },
+
               decoration: InputDecoration(
                 filled: true,
                 fillColor: Colors.white,
                 prefixIcon: Icon(icon),
                 errorText: errorText,
-                errorStyle: TextStyle(color: Colors.red),
+                errorStyle: const TextStyle(color: Colors.red),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(30),
                   borderSide: BorderSide.none,
