@@ -33,7 +33,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
           .doc(widget.userId)
           .get();
 
-      // حساب المهام المكتملة للتبرعات وطلبات المستفيدين للمندوب الحالي
       final donationsSnapshot = await FirebaseFirestore.instance
           .collection('donations')
           .where('courierID', isEqualTo: widget.userId)
@@ -106,7 +105,7 @@ class _CourierHomePageState extends State<CourierHomePage> {
           .get();
 
       for (var boxDoc in boxesSnapshot.docs) {
-        batch.update(boxDoc.reference, {'status': 'delivered'});
+        batch.update(boxDoc.reference, {'status': 'available'});
       }
 
       final targetDonationStatus = (originalStatus == 'published')
@@ -151,8 +150,17 @@ class _CourierHomePageState extends State<CourierHomePage> {
           .where('requestId', isEqualTo: requestId)
           .get();
 
+      final Set<String> donationIds = {};
+
       for (var boxDoc in boxesSnapshot.docs) {
-        batch.update(boxDoc.reference, {'status': 'completed'});
+        final boxData = boxDoc.data();
+
+        batch.update(boxDoc.reference, {'status': 'delivered'});
+
+        final dId = boxData['donationId'] ?? boxData['donationID'];
+        if (dId != null && dId.toString().isNotEmpty) {
+          donationIds.add(dId.toString());
+        }
       }
 
       final requestRef = FirebaseFirestore.instance
@@ -164,12 +172,24 @@ class _CourierHomePageState extends State<CourierHomePage> {
         'deliveredAt': FieldValue.serverTimestamp(),
       });
 
+      for (String dId in donationIds) {
+        final donationRef = FirebaseFirestore.instance
+            .collection('donations')
+            .doc(dId);
+        batch.update(donationRef, {
+          'status': 'delivered',
+          'courierTaskStatus': 'completed',
+          'deliveredAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // تنفيذ العملية دفعة واحدة (Batch Commit)
       await batch.commit();
 
       if (!mounted) return;
       AppDesign.showSuccessSnackBar(
         context,
-        'تم إتمام توصيل طلب المستفيد بنجاح',
+        'تم إتمام توصيل طلب المستفيد وتحديث التبرعات المرتبطة بنجاح',
       );
       _loadCourierData();
     } catch (e) {
@@ -430,18 +450,28 @@ class _CourierHomePageState extends State<CourierHomePage> {
                           // 1. عرض التبرعات النشطة
                           ...activeDonations.map((doc) {
                             final data = doc.data() as Map<String, dynamic>;
-                            final rawCity = (data['city'] ?? '')
-                                .toString()
-                                .trim();
-                            final rawDistrict = (data['district'] ?? '')
-                                .toString()
-                                .trim();
+
+                            // قراءة العنوان من الخريطة pickupAddress بشكل صحيح حسب هيكل قاعدة البيانات
+                            final pickupAddressMap = data['pickupAddress'];
+                            final rawCity = pickupAddressMap is Map
+                                ? (pickupAddressMap['city'] ?? '')
+                                      .toString()
+                                      .trim()
+                                : (data['city'] ?? '').toString().trim();
+
+                            final rawDistrict = pickupAddressMap is Map
+                                ? (pickupAddressMap['district'] ?? '')
+                                      .toString()
+                                      .trim()
+                                : (data['district'] ?? '').toString().trim();
+
                             final city = rawCity.isNotEmpty
                                 ? rawCity
                                 : 'لا يوجد';
                             final district = rawDistrict.isNotEmpty
                                 ? rawDistrict
                                 : 'لا يوجد';
+
                             final donorId = data['donorID'] ?? '';
                             final originalStatus =
                                 data['originalStatus'] ?? 'published';
@@ -726,6 +756,9 @@ class _CourierHomePageState extends State<CourierHomePage> {
                                 data['beneficiaryId'] ??
                                 data['beneficiaryID'] ??
                                 '';
+
+                            final donationId =
+                                data['donationId'] ?? data['donationID'] ?? '';
                             final addressMap = data['deliveryAddress'];
                             final warehouseName = addressMap is Map
                                 ? (addressMap['warehouseName'] ?? 'المستودع')
@@ -854,7 +887,7 @@ class _CourierHomePageState extends State<CourierHomePage> {
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
-                                            '$deliveryAddressText: عنوان المستفيد',
+                                            'موقع التسليم: $deliveryAddressText',
                                             style: AppDesign.bodySecondaryStyle,
                                           ),
                                           const SizedBox(height: 8),
