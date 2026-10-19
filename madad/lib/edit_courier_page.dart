@@ -354,10 +354,27 @@ class _EditCourierPageState extends State<EditCourierPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: AppDesign.background,
+
         appBar: AppBar(
-          title: const Text('تعديل بيانات السائق'),
+          automaticallyImplyLeading: false,
+          title: Stack(
+            alignment: Alignment.center,
+            children: [
+              const Center(child: Text('تعديل بيانات السائق')),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  icon: const Icon(Icons.west, color: Colors.black, size: 28),
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+            ],
+          ),
           centerTitle: true,
         ),
+
         body: isLoading
             ? const Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
