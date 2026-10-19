@@ -78,6 +78,43 @@ class BeneficiaryOrdersPage extends StatefulWidget {
 
 class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
   int _bottomNavIndex = 1;
+  bool _accessChecked = false;
+  bool _isApproved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBeneficiaryStatus();
+  }
+
+  Future<void> _checkBeneficiaryStatus() async {
+    try {
+      final result = await FirebaseFirestore.instance
+          .collection('beneficiaries')
+          .where('userId', isEqualTo: widget.userId)
+          .limit(1)
+          .get();
+
+      final status = result.docs.isNotEmpty
+          ? (result.docs.first.data()['status'] ?? 'pending')
+              .toString()
+              .trim()
+              .toLowerCase()
+          : 'pending';
+
+      if (!mounted) return;
+      setState(() {
+        _isApproved = status == 'approved';
+        _accessChecked = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isApproved = false;
+        _accessChecked = true;
+      });
+    }
+  }
 
   /// 0 = الطلبات النشطة
   /// 1 = الطلبات السابقة
@@ -91,15 +128,30 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
         backgroundColor: AppDesign.background,
         bottomNavigationBar: _buildBottomNav(),
         body: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(),
-              _buildTabs(),
-              Expanded(
-                child: _buildRequestsList(),
-              ),
-            ],
-          ),
+          child: !_accessChecked
+              ? const Center(child: CircularProgressIndicator())
+              : !_isApproved
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'طلبك كمستفيد قيد المراجعة، وستتمكن من متابعة طلباتك بعد الموافقة.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppDesign.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        _buildHeader(),
+                        _buildTabs(),
+                        Expanded(child: _buildRequestsList()),
+                      ],
+                    ),
         ),
       ),
     );
@@ -276,6 +328,26 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
 
   // ───────────────────────── البوتوم ناف ─────────────────────────
   Widget _buildBottomNav() {
+    final destinations = <NavigationDestination>[
+      const NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home_rounded),
+        label: 'الرئيسية',
+      ),
+      if (_isApproved)
+        const NavigationDestination(
+          icon: Icon(Icons.volunteer_activism_outlined),
+          selectedIcon: Icon(Icons.volunteer_activism_rounded),
+          label: 'طلباتي',
+        ),
+      const NavigationDestination(
+        icon: Icon(Icons.more_horiz),
+        selectedIcon: Icon(Icons.more_horiz),
+        label: 'المزيد',
+      ),
+    ];
+    final selectedIndex = _isApproved ? _bottomNavIndex : 1;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       decoration: BoxDecoration(
@@ -291,55 +363,28 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
       ),
       child: NavigationBar(
         height: 78,
-        selectedIndex: _bottomNavIndex,
+        selectedIndex: selectedIndex.clamp(0, destinations.length - 1),
         backgroundColor: Colors.transparent,
         indicatorColor: AppDesign.secondary.withOpacity(0.16),
         surfaceTintColor: Colors.transparent,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
-          if (index == 1) return;
-
-          setState(() {
-            _bottomNavIndex = index;
-          });
-
           if (index == 0) {
-            Navigator.pushReplacementNamed(
-              context,
-              '/beneficiaryHome',
-              arguments: widget.userId,
-            );
-          } else if (index == 2) {
+            Navigator.pushReplacementNamed(context, '/beneficiaryHome', arguments: widget.userId);
+          } else if (_isApproved && index == 1) {
+            return;
+          } else {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(
-                builder: (_) => BeneficiaryMorePage(
-                  userId: widget.userId,
-                ),
-              ),
+              MaterialPageRoute(builder: (_) => BeneficiaryMorePage(userId: widget.userId)),
             );
           }
         },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'الرئيسية',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.volunteer_activism_outlined),
-            selectedIcon: Icon(Icons.volunteer_activism_rounded),
-            label: 'طلباتي',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.more_horiz),
-            selectedIcon: Icon(Icons.more_horiz),
-            label: 'المزيد',
-          ),
-        ],
+        destinations: destinations,
       ),
     );
   }
+
 }
 
 /// ═══════════════════════════ كارد الطلب ═══════════════════════════
