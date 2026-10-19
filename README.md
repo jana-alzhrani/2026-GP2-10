@@ -1,4 +1,4 @@
-# 2025-GP1-10 MADAD 
+# 2026-GP2-10 MADAD 
 # 1.project overview
 Madad is an Android mobile application designed to connect donors with verified beneficiaries through a secure and organized clothing donation platform. The application enables donors to list clothing items with detailed information and images, while allowing beneficiaries to browse available donations and request suitable items based on their needs.
 
