@@ -76,7 +76,6 @@ class _LoginPageState extends State<LoginPage> {
                 correctCode: verificationId,
                 firstName: '',
                 lastName: '',
-                email: '',
                 phone: phoneText,
                 isLogin: true,
               ),
