@@ -171,10 +171,13 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
 
                       List<Map<String, dynamic>> combinedTasks = [];
 
-                      // 1. فلترة وتجهيز التبرعات (donations)
                       for (var doc in donationDocs) {
                         final data = doc.data() as Map<String, dynamic>;
                         final status = data['status'] ?? '';
+                        final courierTaskStatus =
+                            (data['courierTaskStatus'] ?? '')
+                                .toString()
+                                .toLowerCase();
                         final deliveryMethod = data['deliveryMethod'] ?? '';
                         final courierId = data['courierID'];
 
@@ -186,8 +189,8 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
 
                         bool isCompleted =
                             (_selectedTab == 1) &&
-                            (status == 'delivered' || status == 'available') &&
-                            courierId == widget.userId;
+                            (courierId == widget.userId) &&
+                            (courierTaskStatus == 'completed');
 
                         if (isAvailable || isCompleted) {
                           combinedTasks.add({
@@ -199,10 +202,13 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                         }
                       }
 
-                      // 2. فلترة وتجهيز طلبات المستفيدين (requests)
                       for (var doc in requestDocs) {
                         final data = doc.data() as Map<String, dynamic>;
                         final status = data['status'] ?? '';
+                        final courierTaskStatus =
+                            (data['courierTaskStatus'] ?? '')
+                                .toString()
+                                .toLowerCase();
                         final deliveryMethod =
                             data['deliveryMethod'] ?? ''; // جلب طريقة التوصيل
                         final courierId =
@@ -218,8 +224,8 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
 
                         bool isCompleted =
                             (_selectedTab == 1) &&
-                            status == 'completed' &&
-                            (courierId == widget.userId);
+                            (courierId == widget.userId) &&
+                            (courierTaskStatus == 'completed');
 
                         if (isAvailable || isCompleted) {
                           combinedTasks.add({
@@ -356,11 +362,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      status == 'published'
-                          ? 'متاح (تبرع جديد)'
-                          : status == 'reserved'
-                          ? 'متاح (محجوز لمستفيد)'
-                          : 'مكتمل',
+                      _selectedTab == 1 ? 'مكتمل' : '',
                       style: AppDesign.captionStyle.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -565,7 +567,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          status == 'completed' ? 'مكتمل' : 'طلب مستفيد متاح',
+                          _selectedTab == 1 ? 'مكتمل' : '',
                           style: AppDesign.captionStyle.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
