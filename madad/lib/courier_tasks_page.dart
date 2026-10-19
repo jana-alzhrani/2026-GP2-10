@@ -277,8 +277,16 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
     Map<String, dynamic> data,
     String status,
   ) {
-    final rawCity = (data['city'] ?? '').toString().trim();
-    final rawDistrict = (data['district'] ?? '').toString().trim();
+    // قراءة العنوان من خريطة pickupAddress بشكل صحيح
+    final pickupAddressMap = data['pickupAddress'];
+    final rawCity = pickupAddressMap is Map
+        ? (pickupAddressMap['city'] ?? '').toString().trim()
+        : (data['city'] ?? '').toString().trim();
+
+    final rawDistrict = pickupAddressMap is Map
+        ? (pickupAddressMap['district'] ?? '').toString().trim()
+        : (data['district'] ?? '').toString().trim();
+
     final city = rawCity.isNotEmpty ? rawCity : 'لا يوجد';
     final district = rawDistrict.isNotEmpty ? rawDistrict : 'لا يوجد';
 
@@ -615,51 +623,6 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppDesign.background,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppDesign.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'الصناديق المرتبطة بالطلب:',
-                          style: AppDesign.bodySecondaryStyle.copyWith(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        ...boxCodes.map(
-                          (code) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 3),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.inventory_2_outlined,
-                                  size: 16,
-                                  color: AppDesign.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'رمز الصندوق: $code',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                   const SizedBox(height: 6),
                   Row(
