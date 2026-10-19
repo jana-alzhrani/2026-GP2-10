@@ -36,13 +36,13 @@ class _CourierHomePageState extends State<CourierHomePage> {
       final donationsSnapshot = await FirebaseFirestore.instance
           .collection('donations')
           .where('courierID', isEqualTo: widget.userId)
-          .where('status', whereIn: ['delivered', 'available'])
+          .where('courierTaskStatus', isEqualTo: 'completed')
           .get();
 
       final requestsSnapshot = await FirebaseFirestore.instance
           .collection('requests')
           .where('courierID', isEqualTo: widget.userId)
-          .where('status', isEqualTo: 'completed')
+          .where('courierTaskStatus', isEqualTo: 'completed')
           .get();
 
       if (!mounted) return;
