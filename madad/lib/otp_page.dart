@@ -17,7 +17,6 @@ class OtpPage extends StatefulWidget {
 
   final String firstName;
   final String lastName;
-  final String email;
   final String phone;
   final bool isLogin;
 
@@ -33,7 +32,6 @@ class OtpPage extends StatefulWidget {
     required this.correctCode,
     required this.firstName,
     required this.lastName,
-    required this.email,
     required this.phone,
     required this.isLogin,
     this.role = 'donor',
@@ -202,12 +200,9 @@ class _OtpPageState extends State<OtpPage> {
       }
 
       final uid = currentUser.uid;
-
       final users = FirebaseFirestore.instance.collection('Users');
 
-      // =====================================================
       // تسجيل الدخول: البحث عن الحساب برقم الجوال
-      // =====================================================
       if (widget.isLogin) {
         final localPhone = widget.phone.trim();
         final internationalPhone = formatPhoneNumber(widget.phone);
@@ -217,7 +212,6 @@ class _OtpPageState extends State<OtpPage> {
             .limit(1)
             .get();
 
-        // البحث عن الرقم بالصيغة الدولية في حقل phone
         if (userCheck.docs.isEmpty) {
           userCheck = await users
               .where('phone', isEqualTo: internationalPhone)
@@ -225,7 +219,6 @@ class _OtpPageState extends State<OtpPage> {
               .get();
         }
 
-        // البحث في phoneNumber بالصيغة الدولية
         if (userCheck.docs.isEmpty) {
           userCheck = await users
               .where('phoneNumber', isEqualTo: internationalPhone)
@@ -233,7 +226,6 @@ class _OtpPageState extends State<OtpPage> {
               .get();
         }
 
-        // البحث في phoneNumber بالصيغة المحلية
         if (userCheck.docs.isEmpty) {
           userCheck = await users
               .where('phoneNumber', isEqualTo: localPhone)
@@ -241,7 +233,6 @@ class _OtpPageState extends State<OtpPage> {
               .get();
         }
 
-        // رفض الدخول إذا لم يوجد سجل مطابق
         if (userCheck.docs.isEmpty) {
           await FirebaseAuth.instance.signOut();
 
@@ -255,7 +246,6 @@ class _OtpPageState extends State<OtpPage> {
           return;
         }
 
-        // استخدام معرّف سجل Firestore الموجود بالفعل
         final matchedUser = userCheck.docs.first;
         final userData = matchedUser.data();
         final appUserId = matchedUser.id;
@@ -303,9 +293,7 @@ class _OtpPageState extends State<OtpPage> {
         return;
       }
 
-      // =====================================================
       // إنشاء حساب جديد: المتبرع أو المستفيد فقط
-      // =====================================================
       final userRef = users.doc(uid);
       final userDoc = await userRef.get();
 
@@ -344,22 +332,17 @@ class _OtpPageState extends State<OtpPage> {
           uploadedPdfUrl = await storageRef.getDownloadURL();
         }
 
-        // =====================================================
-        // بيانات المستخدم الأساسية فقط
-        // =====================================================
+        // بيانات المستخدم الأساسية بدون الإيميل
         final userData = <String, dynamic>{
           'userId': uid,
           'firstName': widget.firstName.trim(),
           'lastName': widget.lastName.trim(),
-          'email': widget.email.trim(),
           'phone': widget.phone.trim(),
-          'phoneNumber': formatPhoneNumber(widget.phone),
           'role': role,
           'createdAt': FieldValue.serverTimestamp(),
         };
 
-        // بيانات خاصة بالمستفيد داخل Users فقط
-        // بدون رقم الضمان وبدون رابط ملف الضمان
+        // بيانات حالة المستفيد داخل Users
         if (role == 'beneficiary') {
           userData.addAll({'status': 'pending', 'isVerified': false});
         }
@@ -367,18 +350,18 @@ class _OtpPageState extends State<OtpPage> {
         // إنشاء المستخدم داخل Users
         await userRef.set(userData);
 
-        // =====================================================
         // إنشاء بيانات المستفيد في Collection beneficiaries
-        // =====================================================
+
         if (role == 'beneficiary') {
           final beneficiaryRef = FirebaseFirestore.instance
               .collection('beneficiaries')
-              .doc();
+              .doc(uid);
 
           await beneficiaryRef.set({
-            'userID': uid,
+            'userId': uid,
             'socialSecurityNumber': widget.socialSecurityNumber ?? '',
             'socialSecurityPdfUrl': uploadedPdfUrl ?? '',
+            'status': 'pending',
           });
         }
 
@@ -408,11 +391,8 @@ class _OtpPageState extends State<OtpPage> {
         return;
       }
 
-      // =====================================================
       // إذا كان حساب التسجيل موجودًا مسبقًا
-      // =====================================================
       final userData = userDoc.data() ?? {};
-
       final role = (userData['role'] ?? '').toString().trim().toLowerCase();
 
       if (!mounted) return;
@@ -480,7 +460,7 @@ class _OtpPageState extends State<OtpPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // صورة وشعار مداد
+            // صورة وشعار مدد
             Stack(
               children: [
                 Container(
@@ -507,33 +487,26 @@ class _OtpPageState extends State<OtpPage> {
                 ),
               ],
             ),
-
             Padding(
               padding: AppPadding.screen,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Icon(Icons.lock, size: 70, color: AppDesign.primary),
-
                   AppGap.md,
-
                   Text(
                     'أدخل رمز التحقق',
                     style: AppDesign.h2Style.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-
                   AppGap.md,
-
                   Text(
                     'أدخل الرمز المرسل إلى رقم جوالك',
                     textAlign: TextAlign.center,
                     style: AppDesign.bodySecondaryStyle,
                   ),
-
                   AppGap.md,
-
                   Directionality(
                     textDirection: TextDirection.rtl,
                     child: TextField(
@@ -573,9 +546,7 @@ class _OtpPageState extends State<OtpPage> {
                       ),
                     ),
                   ),
-
                   AppGap.lg,
-
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppDesign.primary,
@@ -601,9 +572,7 @@ class _OtpPageState extends State<OtpPage> {
                             ),
                           ),
                   ),
-
                   AppGap.md,
-
                   TextButton(
                     onPressed: canResend && !isResending ? resendCode : null,
                     child: Text(
