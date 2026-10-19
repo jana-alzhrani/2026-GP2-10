@@ -788,6 +788,22 @@ class _CourierHomePageState extends State<CourierHomePage> {
                                         boxesSnap.data?.docs ?? [];
                                     final int boxesCount = boxesDocs.length;
 
+                                    List<String> boxCodes = boxesDocs
+                                        .map(
+                                          (b) =>
+                                              (b.data()
+                                                      as Map<
+                                                        String,
+                                                        dynamic
+                                                      >)['boxCode']
+                                                  ?.toString() ??
+                                              'صندوق',
+                                        )
+                                        .toList();
+                                    if (boxCodes.isEmpty) {
+                                      boxCodes = ['لا توجد صناديق مضافةة'];
+                                    }
+
                                     return Container(
                                       margin: const EdgeInsets.only(bottom: 16),
                                       padding: const EdgeInsets.all(16),
@@ -909,6 +925,68 @@ class _CourierHomePageState extends State<CourierHomePage> {
                                             style: AppDesign.bodyStyle.copyWith(
                                               fontWeight: FontWeight.bold,
                                               color: AppDesign.primary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: AppDesign.background,
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              border: Border.all(
+                                                color: AppDesign.border,
+                                              ),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'الصناديق المرتبطة بالطلب:',
+                                                  style: AppDesign
+                                                      .bodySecondaryStyle
+                                                      .copyWith(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12,
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 6),
+                                                ...boxCodes.map(
+                                                  (code) => Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 3,
+                                                        ),
+                                                    child: Row(
+                                                      children: [
+                                                        const Icon(
+                                                          Icons
+                                                              .inventory_2_outlined,
+                                                          size: 16,
+                                                          color:
+                                                              AppDesign.primary,
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 8,
+                                                        ),
+                                                        Text(
+                                                          'رمز الصندوق: $code',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 14,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                           const SizedBox(height: 14),
