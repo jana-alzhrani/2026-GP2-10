@@ -25,12 +25,21 @@ class _BeneficiaryViewDonationPageState
     extends State<BeneficiaryViewDonationPage> {
   bool _isAddingToCart = false;
 
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>>
+    _beneficiaryStatusStream;
+
   late Future<Map<String, dynamic>> _donationDetailsFuture;
 
-  @override
+   @override
   void initState() {
     super.initState();
+
     _donationDetailsFuture = _loadDonationDetails();
+
+    _beneficiaryStatusStream = FirebaseFirestore.instance
+        .collection('beneficiaries')
+        .doc(widget.userId)
+        .snapshots();
   }
 
   // ============================================================
@@ -153,6 +162,31 @@ class _BeneficiaryViewDonationPageState
   ) async {
     try {
       setState(() => _isAddingToCart = true);
+            // التحقق من حالة المستفيد قبل الإضافة للسلة
+      final beneficiaryDoc = await FirebaseFirestore.instance
+          .collection('beneficiaries')
+          .doc(widget.userId)
+          .get();
+
+      final beneficiaryStatus =
+          (beneficiaryDoc.data()?['status'] ?? 'pending')
+              .toString()
+              .trim()
+              .toLowerCase();
+
+      if (!beneficiaryDoc.exists ||
+          beneficiaryStatus != 'approved') {
+        if (!mounted) return;
+
+        AppDesign.showErrorSnackBar(
+          context,
+          beneficiaryStatus == 'rejected'
+              ? 'عذرًا، لم تتم الموافقة على طلبك كمستفيد.'
+              : 'طلبك قيد المراجعة، يمكنك إضافة التبرعات للسلة بعد قبولك كمستفيد.',
+        );
+
+        return;
+      }
 
       final existingCartItem = await FirebaseFirestore.instance
           .collection('cart')
@@ -1116,38 +1150,68 @@ class _BeneficiaryViewDonationPageState
                 ),
 
                 // ==================================================
-                // Add to cart button
+                // Add to cart button - Live beneficiary status
                 // ==================================================
 
-                SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppDesign.screenPadding,
-                      0,
-                      AppDesign.screenPadding,
-                      AppDesign.screenPadding,
-                    ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: AppDesign.buttonHeightMD,
-                      child: ElevatedButton(
-                        onPressed: _isAddingToCart
-                            ? null
-                            : () => _addToCart(
-                                  boxData,
+                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: _beneficiaryStatusStream,
+                  builder: (context, beneficiarySnapshot) {
+                    final beneficiaryData =
+                        beneficiarySnapshot.data?.data();
+
+                    final beneficiaryStatus =
+                        (beneficiaryData?['status'] ?? 'pending')
+                            .toString()
+                            .trim()
+                            .toLowerCase();
+
+                    final isApproved =
+                        beneficiarySnapshot.hasData &&
+                        beneficiarySnapshot.data!.exists &&
+                        beneficiaryStatus == 'approved';
+
+                    final isLoadingStatus =
+                        beneficiarySnapshot.connectionState ==
+                            ConnectionState.waiting;
+
+                    final canAddToCart =
+                        isApproved && !_isAddingToCart;
+
+                    return SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppDesign.screenPadding,
+                          0,
+                          AppDesign.screenPadding,
+                          AppDesign.screenPadding,
+                        ),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: AppDesign.buttonHeightMD,
+                          child: ElevatedButton(
+                            onPressed: canAddToCart
+                                ? () => _addToCart(boxData)
+                                : null,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    _isAddingToCart
+                                        ? 'جاري الإضافة...'
+                                        : isLoadingStatus
+                                            ? 'جاري التحقق من حالة المستفيد...'
+                                            : isApproved
+                                                ? 'إضافة إلى السلة'
+                                                : 'بانتظار قبول طلب المستفيد',
+                                    textAlign: TextAlign.center,
+                                  ),
                                 ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _isAddingToCart
-                                  ? 'جاري الإضافة...'
-                                  : 'إضافة إلى السلة',
-                            ),
-                            const SizedBox(width: 8),
-                            _isAddingToCart
-                                ? const SizedBox(
+                                const SizedBox(width: 8),
+                                if (_isAddingToCart ||
+                                    isLoadingStatus)
+                                  const SizedBox(
                                     width: 18,
                                     height: 18,
                                     child: CircularProgressIndicator(
@@ -1155,16 +1219,18 @@ class _BeneficiaryViewDonationPageState
                                       color: Colors.white,
                                     ),
                                   )
-                                : const Icon(
+                                else
+                                  const Icon(
                                     Icons.add_shopping_cart_outlined,
                                   ),
-                          ],
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              ],
+                    );
+                  },
+                ),],
             );
           },
         ),
