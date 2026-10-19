@@ -28,31 +28,21 @@ class _RoleSelectionPageState extends State {
                     width: double.infinity,
                     decoration: const BoxDecoration(
                       image: DecorationImage(
-                        image: AssetImage('assets/images/madad.jpeg'),
+                        image: AssetImage('assets/images/madad_icon.jpeg'),
                         fit: BoxFit.cover,
-                        alignment: Alignment(0, -0.2),
                       ),
                     ),
                   ),
                   Container(
                     height: 280,
                     width: double.infinity,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withOpacity(0.4),
-                        ],
-                      ),
-                    ),
+                    decoration: BoxDecoration(),
                   ),
                   Positioned(
                     top: 40,
                     left: 10,
                     child: IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      icon: Icon(Icons.arrow_forward, color: Colors.white),
                       onPressed: () {
                         Navigator.pop(context);
                       },
