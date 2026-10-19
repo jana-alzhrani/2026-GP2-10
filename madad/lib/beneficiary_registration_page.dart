@@ -305,7 +305,6 @@ class _BeneficiaryRegistrationPageState
                 correctCode: verificationId,
                 firstName: firstName,
                 lastName: lastName,
-                email: '',
                 phone: phone,
                 isLogin: false,
                 role: 'beneficiary',
