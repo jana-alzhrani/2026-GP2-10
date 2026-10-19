@@ -843,7 +843,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                               AppGap.wMD,
                               Expanded(
                                 child: RichText(
-                                  textAlign: TextAlign.left,
+                                  textAlign: TextAlign.right,
                                   text: TextSpan(
                                     children: [
                                       TextSpan(
