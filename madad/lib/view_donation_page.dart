@@ -398,7 +398,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
       Navigator.pushNamed(
         context,
-        '/deliveryMethod',
+        '/donorDelivery',
         arguments: docId,
       );
     } catch (e) {
