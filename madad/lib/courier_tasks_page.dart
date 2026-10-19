@@ -203,11 +203,14 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                       for (var doc in requestDocs) {
                         final data = doc.data() as Map<String, dynamic>;
                         final status = data['status'] ?? '';
+                        final deliveryMethod =
+                            data['deliveryMethod'] ?? ''; // جلب طريقة التوصيل
                         final courierId =
                             data['courierID'] ?? data['courierId'];
 
                         bool isAvailable =
                             (_selectedTab == 0) &&
+                            deliveryMethod == 'delivery' &&
                             (status == 'requested' ||
                                 status == 'reserved' ||
                                 status.isEmpty) &&
@@ -469,6 +472,20 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
         ? (addressMap['warehouseName'] ?? 'المستودع').toString()
         : 'المستودع';
 
+    String deliveryAddressText = 'عنوان المستفيد';
+    if (addressMap is Map) {
+      final city = addressMap['city'] ?? '';
+      final district = addressMap['district'] ?? '';
+
+      List<String> addressParts = [];
+      if (city.isNotEmpty) addressParts.add(city);
+      if (district.isNotEmpty) addressParts.add(district);
+
+      if (addressParts.isNotEmpty) {
+        deliveryAddressText = addressParts.join(' - ');
+      }
+    }
+
     return FutureBuilder(
       future: beneficiaryId.isNotEmpty && beneficiaryId != '-'
           ? FirebaseFirestore.instance
@@ -561,9 +578,9 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                         color: AppDesign.primary,
                       ),
                       const SizedBox(width: 8),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'موقع التسليم: عنوان المستفيد',
+                          'موقع التسليم: $deliveryAddressText',
                           style: AppDesign.bodySecondaryStyle,
                         ),
                       ),
