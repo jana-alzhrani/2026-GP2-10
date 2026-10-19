@@ -65,6 +65,62 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     }
   }
 
+Future<void> _openCartIfApproved() async {
+  try {
+    final beneficiaryQuery = await FirebaseFirestore.instance
+    .collection('beneficiaries')
+    .where('userId', isEqualTo: widget.userId)
+    .limit(1)
+    .get();
+
+final beneficiaryDoc = beneficiaryQuery.docs.isNotEmpty
+    ? beneficiaryQuery.docs.first
+    : null;
+
+    if (!mounted) return;
+
+    final status = (beneficiaryDoc?.data()['status'] ?? 'pending')
+    .toString()
+    .trim()
+    .toLowerCase();
+
+if (beneficiaryDoc == null || status != 'approved') {
+      final message = status == 'rejected'
+          ? 'عذرًا، لم تتم الموافقة على طلبك كمستفيد.'
+          : 'طلبك كمستفيد قيد المراجعة، ويمكنك استخدام السلة بعد الموافقة.';
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BeneficiaryCartPage(
+          userId: widget.userId,
+        ),
+      ),
+    );
+  } catch (e) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تعذر التحقق من حالة المستفيد، حاول مرة أخرى.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
   // ============================================================
   // NOTIFICATIONS
   // ============================================================
@@ -915,18 +971,7 @@ Future<void> _showNoNotifications() async {
                                   Colors.grey.shade700,
                               size: 28,
                             ),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      BeneficiaryCartPage(
-                                    userId:
-                                        widget.userId,
-                                  ),
-                                ),
-                              );
-                            },
+                            onPressed: _openCartIfApproved,
                           );
                         }
 
@@ -947,18 +992,7 @@ Future<void> _showNoNotifications() async {
                                     0;
 
                             return IconButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        BeneficiaryCartPage(
-                                      userId:
-                                          widget.userId,
-                                    ),
-                                  ),
-                                );
-                              },
+                              onPressed: _openCartIfApproved,
                               icon: Stack(
                                 clipBehavior:
                                     Clip.none,
