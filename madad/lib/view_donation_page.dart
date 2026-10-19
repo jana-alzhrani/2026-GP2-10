@@ -804,9 +804,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                       final statusColor = getBoxStatusColor(rawStatus);
                       final statusIcon = getBoxStatusIcon(rawStatus);
                       final boxCode = (data['boxCode'] ?? '---').toString();
-                      final parts = boxCode.split('-');
-                      final leftPart = parts.isNotEmpty ? parts[0] : '';
-                      final rightPart = parts.length >= 2 ? parts[1] : '';
                       final items = data['items'] ?? [];
 
                       return Container(
@@ -818,56 +815,41 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                             horizontal: AppDesign.spaceMD,
                             vertical: AppDesign.spaceSM,
                           ),
-                          title: Row(
-                            textDirection: TextDirection.rtl,
-                            children: [
-                              Row(
-                                textDirection: TextDirection.rtl,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    statusIcon,
-                                    size: 18,
-                                    color: statusColor,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    status,
-                                    style: AppDesign.captionStyle.copyWith(
-                                      color: statusColor,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              AppGap.wMD,
-                              Expanded(
-                                child: RichText(
-                                  textAlign: TextAlign.right,
-                                  text: TextSpan(
-                                    children: [
-                                      TextSpan(
-                                        text: leftPart,
-                                        style: AppDesign.h2Style.copyWith(
-                                          color: AppDesign.primary,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      TextSpan(
-                                        text: rightPart.isNotEmpty
-                                            ? '-$rightPart'
-                                            : '',
-                                        style: AppDesign.h2Style.copyWith(
-                                          color: AppDesign.secondary,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                         title: Row(
+  textDirection: TextDirection.rtl,
+  children: [
+    Row(
+      textDirection: TextDirection.rtl,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          statusIcon,
+          size: 18,
+          color: statusColor,
+        ),
+        const SizedBox(width: 5),
+        Text(
+          status,
+          style: AppDesign.captionStyle.copyWith(
+            color: statusColor,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    ),
+    AppGap.wMD,
+    Expanded(
+      child: Text(
+        boxCode,
+        textAlign: TextAlign.right,
+        style: AppDesign.h2Style.copyWith(
+          color: AppDesign.primary,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ),
+  ],
+),
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(AppDesign.spaceMD),
