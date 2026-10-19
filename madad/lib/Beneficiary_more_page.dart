@@ -26,11 +26,59 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
   String email = '';
 
   bool isLoading = true;
+  bool _isBeneficiaryApproved = false;
+  bool _approvalStatusLoaded = false;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadBeneficiaryApprovalStatus();
+  }
+
+  Future<void> _loadBeneficiaryApprovalStatus() async {
+    try {
+      final result = await FirebaseFirestore.instance
+          .collection('beneficiaries')
+          .where('userId', isEqualTo: widget.userId)
+          .limit(1)
+          .get();
+      final status = result.docs.isNotEmpty
+          ? (result.docs.first.data()['status'] ?? 'pending')
+              .toString().trim().toLowerCase()
+          : 'pending';
+      if (!mounted) return;
+      setState(() {
+        _isBeneficiaryApproved = status == 'approved';
+        _approvalStatusLoaded = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isBeneficiaryApproved = false;
+        _approvalStatusLoaded = true;
+      });
+    }
+  }
+
+  Future<void> _openOrdersIfApproved() async {
+    if (!_approvalStatusLoaded) {
+      await _loadBeneficiaryApprovalStatus();
+    }
+    if (!mounted) return;
+    if (!_isBeneficiaryApproved) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('طلبك كمستفيد قيد المراجعة، وستتمكن من متابعة طلباتك بعد الموافقة.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      return;
+    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => BeneficiaryOrdersPage(userId: widget.userId)),
+    );
   }
 
   Future<void> _loadUserData() async {
@@ -497,6 +545,55 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
   }
 
   Widget _buildBottomNavigationBar() {
+    // لا نعرض شريطًا مؤقتًا بخيارين قبل اكتمال قراءة حالة المستفيد.
+    // ننتظر نتيجة Firestore حتى يظهر شريط التنقل الصحيح من أول مرة.
+    if (!_approvalStatusLoaded) {
+      return Container(
+        height: 78,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        decoration: BoxDecoration(
+          color: AppDesign.white,
+          borderRadius: BorderRadius.circular(AppDesign.radiusXL),
+          boxShadow: [
+            BoxShadow(
+              color: AppDesign.black.withOpacity(0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.2),
+          ),
+        ),
+      );
+    }
+
+    final destinations = <NavigationDestination>[
+      const NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home_rounded),
+        label: 'الرئيسية',
+      ),
+      if (_approvalStatusLoaded && _isBeneficiaryApproved)
+        const NavigationDestination(
+          icon: Icon(Icons.volunteer_activism_outlined),
+          selectedIcon: Icon(Icons.volunteer_activism_rounded),
+          label: 'طلباتي',
+        ),
+      const NavigationDestination(
+        icon: Icon(Icons.more_horiz_rounded),
+        selectedIcon: Icon(Icons.more_horiz_rounded),
+        label: 'المزيد',
+      ),
+    ];
+    final selectedIndex = !_isBeneficiaryApproved && _bottomNavIndex == 2
+        ? 1
+        : _bottomNavIndex;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       decoration: BoxDecoration(
@@ -512,62 +609,25 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
       ),
       child: NavigationBar(
         height: 78,
-        selectedIndex: _bottomNavIndex,
+        selectedIndex: selectedIndex.clamp(0, destinations.length - 1),
         backgroundColor: Colors.transparent,
         indicatorColor: AppDesign.secondary.withOpacity(0.16),
         surfaceTintColor: Colors.transparent,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
-          setState(() {
-            _bottomNavIndex = index;
-          });
-
           if (index == 0) {
-            Navigator.pushReplacementNamed(
-              context,
-              '/beneficiaryHome',
-              arguments: widget.userId,
-            );
-          } else if (index == 1) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BeneficiaryOrdersPage(
-                  userId: widget.userId,
-                ),
-              ),
-            );
-          } else if (index == 2) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BeneficiaryMorePage(
-                  userId: widget.userId,
-                ),
-              ),
-            );
+            Navigator.pushReplacementNamed(context, '/beneficiaryHome', arguments: widget.userId);
+          } else if (_isBeneficiaryApproved && index == 1) {
+            _openOrdersIfApproved();
+          } else {
+            setState(() => _bottomNavIndex = 2);
           }
         },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'الرئيسية',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.volunteer_activism_outlined),
-            selectedIcon: Icon(Icons.volunteer_activism_rounded),
-            label: 'طلباتي',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.more_horiz_rounded),
-            selectedIcon: Icon(Icons.more_horiz_rounded),
-            label: 'المزيد',
-          ),
-        ],
+        destinations: destinations,
       ),
     );
   }
+
 }
 
 /// ═══════════════════════════ نافذة تعديل الاسم ═══════════════════════════
