@@ -43,7 +43,7 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
   final TextEditingController _itemCountController = TextEditingController();
 
-  final String _apiKey = 'AIzaSyDkw67OALJJQ9r9skW8mBeiHkNCB6WFkD0';
+  final String _apiKey = '';
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
   int totalItems = 0;
@@ -139,8 +139,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     } else {
       _loadDonationBoxes();
     }
-
-    _loadDonationBoxes();
   }
 
   Future<void> _loadDonationBoxes() async {
@@ -327,41 +325,194 @@ class _EditDonationPageState extends State<EditDonationPage> {
     });
   }
 
+  // نفس نافذة اختيار مصدر الصورة الموجودة في صفحة إضافة التبرع.
+  Future<ImageSource?> _showImageSourceBottomSheet() async {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppDesign.background,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(28),
+                topRight: Radius.circular(28),
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 45,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: AppDesign.border,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  AppGap.md,
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      "اختار طريقة إضافة صورة القطعة",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      "تقدر تصور صورة جديدة أو تختار صورة من جهازك",
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  AppGap.lg,
+                  _buildImageSourceOption(
+                    icon: Icons.camera_alt_outlined,
+                    title: "التقاط صورة",
+                    subtitle: "استخدم كاميرا الجوال لتصوير القطعة",
+                    onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+                  ),
+                  AppGap.sm,
+                  _buildImageSourceOption(
+                    icon: Icons.photo_library_outlined,
+                    title: "اختيار من المعرض",
+                    subtitle: "اختار صورة موجودة في جهازك",
+                    onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+                  ),
+                  AppGap.md,
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        side: BorderSide(color: AppDesign.border),
+                      ),
+                      child: const Text(
+                        "إلغاء",
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildImageSourceOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppDesign.surfaceAlt,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppDesign.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppDesign.softGreen.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(icon, color: AppDesign.primary, size: 27),
+            ),
+            AppGap.wMD,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(subtitle, style: AppDesign.captionStyle),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_back_ios_new,
+              size: 17,
+              color: AppDesign.primary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _pickItemImage(int box, int index) async {
-    boxes[box]![index]['imageUrl'] = null;
-    if (!boxes.containsKey(box) || index >= boxes[box]!.length) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('حدث خطأ في تحديد القطعة')));
+    if (!boxes.containsKey(box) || index < 0 || index >= boxes[box]!.length) {
+      if (!mounted) return;
+      AppDesign.showErrorSnackBar(context, 'حدث خطأ في تحديد القطعة');
       return;
     }
 
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    final source = await _showImageSourceBottomSheet();
+    if (source == null || !mounted) return;
 
-    if (image == null) return;
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: source,
+        imageQuality: 60,
+      );
 
-    final bytes = await image.readAsBytes();
+      if (image == null) return;
 
-    setState(() {
-      boxes[box]![index]['image'] = bytes;
-      boxes[box]![index]['isValid'] = false;
-      boxes[box]![index]['error'] = "جاري الفحص...";
-      boxes[box]![index]['type'] = null;
-      boxes[box]![index]['size'] = null;
+      final Uint8List bytes = await image.readAsBytes();
+      if (!mounted) return;
 
-      // مهم: الصندوق يحتاج حفظ من جديد
-      savedBoxes.remove(box);
-      changesSaved = false;
-    });
+      setState(() {
+        // نلغي رابط الصورة القديمة فقط بعد اختيار صورة جديدة بالفعل.
+        boxes[box]![index]['image'] = bytes;
+        boxes[box]![index]['imageUrl'] = null;
+        boxes[box]![index]['isValid'] = false;
+        boxes[box]![index]['error'] = null;
+        boxes[box]![index]['type'] = null;
+        boxes[box]![index]['size'] = null;
+        savedBoxes.remove(box);
+        changesSaved = false;
+      });
 
-    await _verifyImageWithGemini(box, index, bytes);
+      await _verifyImageWithGemini(box, index, bytes, image.mimeType);
+    } catch (e) {
+      if (!mounted) return;
+      AppDesign.showErrorSnackBar(context, "تعذر اختيار الصورة");
+      debugPrint('Image picker error: $e');
+    }
   }
 
   Future<void> _verifyImageWithGemini(
     int box,
     int index,
     Uint8List imageBytes,
+    String? mimeType,
   ) async {
     setState(() {
       boxes[box]![index]['error'] = "جاري الفحص...";
@@ -401,7 +552,7 @@ Reject if:
 
                 {
                   "inline_data": {
-                    "mime_type": "image/jpeg",
+                    "mime_type": mimeType ?? "image/jpeg",
                     "data": base64Image,
                   },
                 },
@@ -935,6 +1086,12 @@ Reject if:
         borderSide: const BorderSide(color: AppDesign.border, width: 1),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _itemCountController.dispose();
+    super.dispose();
   }
 
   @override
