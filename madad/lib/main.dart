@@ -93,7 +93,7 @@ class MyApp extends StatelessWidget {
           final donationId =
               ModalRoute.of(context)?.settings.arguments as String? ?? '';
 
-          return DonorDeliveryMethodPage(donationId: donationId);
+          return DeliveryMethodPage(donationId: donationId);
         },
 
         '/courierHome': (context) {
