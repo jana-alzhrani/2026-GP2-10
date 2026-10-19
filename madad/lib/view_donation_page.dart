@@ -15,10 +15,7 @@ import 'package:printing/printing.dart';
 class ViewDonationPage extends StatefulWidget {
   final String userId;
 
-  const ViewDonationPage({
-    super.key,
-    required this.userId,
-  });
+  const ViewDonationPage({super.key, required this.userId});
 
   @override
   State<ViewDonationPage> createState() => _ViewDonationPageState();
@@ -186,19 +183,11 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     );
   }
 
-  Widget _infoRow(
-    IconData icon,
-    String title,
-    String value,
-  ) {
+  Widget _infoRow(IconData icon, String title, String value) {
     return Row(
       textDirection: TextDirection.rtl,
       children: [
-        Icon(
-          icon,
-          size: 20,
-          color: AppDesign.primary,
-        ),
+        Icon(icon, size: 20, color: AppDesign.primary),
         const SizedBox(width: 8),
         Text(
           title,
@@ -209,9 +198,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
         const SizedBox(width: 12),
         Text(
           value,
-          style: AppDesign.bodyStyle.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          style: AppDesign.bodyStyle.copyWith(fontWeight: FontWeight.w700),
         ),
       ],
     );
@@ -257,9 +244,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
           else
             Text(
               method,
-              style: AppDesign.bodyStyle.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+              style: AppDesign.bodyStyle.copyWith(fontWeight: FontWeight.w700),
             ),
           if (trailing != null) trailing,
         ],
@@ -304,7 +289,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     return List.generate(
       10,
       (index) => chars[random.nextInt(chars.length)],
-      ).join();
+    ).join();
   }
 
   Future<void> _deleteDonation(String docId) async {
@@ -319,9 +304,9 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       final currentUser = FirebaseAuth.instance.currentUser;
 
       if (currentUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('يجب تسجيل الدخول أولاً')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('يجب تسجيل الدخول أولاً')));
         return;
       }
 
@@ -331,9 +316,9 @@ class _ViewDonationPageState extends State<ViewDonationPage>
           .get();
 
       if (!donationDoc.exists) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('التبرع غير موجود')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('التبرع غير موجود')));
         return;
       }
 
@@ -363,15 +348,15 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حذف التبرع بنجاح')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم حذف التبرع بنجاح')));
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل حذف التبرع: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل حذف التبرع: $e')));
     }
   }
 
@@ -391,16 +376,12 @@ class _ViewDonationPageState extends State<ViewDonationPage>
           .collection('donations')
           .doc(docId)
           .update({
-        'updatedAt': FieldValue.serverTimestamp(), // تحديث وقت التأكيد
-      });
+            'updatedAt': FieldValue.serverTimestamp(), // تحديث وقت التأكيد
+          });
 
       if (!mounted) return;
 
-      Navigator.pushNamed(
-        context,
-        '/donorDelivery',
-        arguments: docId,
-      );
+      Navigator.pushNamed(context, '/donorDelivery', arguments: docId);
     } catch (e) {
       debugPrint("Error updating donation: $e");
     }
@@ -422,10 +403,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     );
 
     if (result == true && mounted) {
-      AppDesign.showSuccessSnackBar(
-        context,
-        'تم تحديث التبرع بنجاح',
-      );
+      AppDesign.showSuccessSnackBar(context, 'تم تحديث التبرع بنجاح');
     }
   }
 
@@ -439,10 +417,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             child: pw.Column(
               mainAxisSize: pw.MainAxisSize.min,
               children: [
-                pw.Text(
-                  boxCode,
-                  style: pw.TextStyle(fontSize: 42),
-                ),
+                pw.Text(boxCode, style: pw.TextStyle(fontSize: 42)),
                 pw.SizedBox(height: 10),
                 pw.Text("ID: $boxId"),
               ],
@@ -452,16 +427,15 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (format) async => pdf.save(),
-    );
+    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }
 
   Future<void> printAllBoxesLabels(List boxes) async {
     final pdf = pw.Document();
 
-    final logoBytes =
-        (await rootBundle.load('assets/images/logo.png')).buffer.asUint8List();
+    final logoBytes = (await rootBundle.load(
+      'assets/images/logo.png',
+    )).buffer.asUint8List();
 
     final logoImage = pw.MemoryImage(logoBytes);
 
@@ -489,15 +463,9 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.center,
                   children: [
-                    pw.Image(
-                      logoImage,
-                      width: 70,
-                    ),
+                    pw.Image(logoImage, width: 70),
                     pw.SizedBox(height: 8),
-                    pw.Container(
-                      height: 1,
-                      color: PdfColor.fromHex("#0A4D5C"),
-                    ),
+                    pw.Container(height: 1, color: PdfColor.fromHex("#0A4D5C")),
                     pw.SizedBox(height: 8),
 
                     // QR فعلي يحتوي نص الـ boxCode (هذا اللي يتم مسحه)
@@ -544,9 +512,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (format) async => pdf.save(),
-    );
+    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }
 
   /// هل الصندوق لسا ما تم تسليمه للمستودع؟
@@ -642,24 +608,12 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             ),
             child: Column(
               children: [
-                _infoRow(
-                  Icons.wc_outlined,
-                  "الجنس",
-                  gender,
-                ),
+                _infoRow(Icons.wc_outlined, "الجنس", gender),
                 const SizedBox(height: 12),
-                _infoRow(
-                  Icons.cake_outlined,
-                  "الفئة العمرية",
-                  ageGroup,
-                ),
+                _infoRow(Icons.cake_outlined, "الفئة العمرية", ageGroup),
                 if (generalSize.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _infoRow(
-                    Icons.straighten_outlined,
-                    "المقاس",
-                    generalSize,
-                  ),
+                  _infoRow(Icons.straighten_outlined, "المقاس", generalSize),
                 ],
                 const SizedBox(height: 12),
                 _infoRow(
@@ -684,23 +638,29 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                 // زر المسح: فقط للتوصيل الذاتي وإذا فيه صناديق لسا ما انسلمت
                 final bool showScan =
                     deliveryMethod.toLowerCase() == 'self_delivery' &&
-                        boxDocs.any((b) =>
-                            _boxNeedsDropoff(b.data() as Map<String, dynamic>));
+                    boxDocs.any(
+                      (b) => _boxNeedsDropoff(b.data() as Map<String, dynamic>),
+                    );
 
-                final bool isPickup =
-                    deliveryMethod.toLowerCase() == 'pickup';
+                final bool isPickup = deliveryMethod.toLowerCase() == 'pickup';
 
                 // بيانات العنوان المرتبط بخيار الاستلام من الموقع
-                final String city =
-                    (data['city'] ?? data['donorCity'] ?? '').toString().trim();
+                final String city = (data['city'] ?? data['donorCity'] ?? '')
+                    .toString()
+                    .trim();
                 final String district =
-                    (data['district'] ?? data['neighborhood'] ??
-                            data['donorDistrict'] ?? '')
+                    (data['district'] ??
+                            data['neighborhood'] ??
+                            data['donorDistrict'] ??
+                            '')
                         .toString()
                         .trim();
                 final String nationalAddress =
-                    (data['nationalAddress'] ?? data['fullAddress'] ??
-                            data['address'] ?? data['donorNationalAddress'] ?? '')
+                    (data['nationalAddress'] ??
+                            data['fullAddress'] ??
+                            data['address'] ??
+                            data['donorNationalAddress'] ??
+                            '')
                         .toString()
                         .trim();
 
@@ -723,8 +683,9 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                           padding: const EdgeInsets.all(AppDesign.spaceMD),
                           decoration: BoxDecoration(
                             color: AppDesign.surface,
-                            borderRadius:
-                                BorderRadius.circular(AppDesign.radiusMD),
+                            borderRadius: BorderRadius.circular(
+                              AppDesign.radiusMD,
+                            ),
                             border: Border.all(color: AppDesign.border),
                           ),
                           child: Column(
@@ -740,7 +701,11 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                               ),
                               if (city.isNotEmpty) ...[
                                 const SizedBox(height: 8),
-                                _infoRow(Icons.location_city_outlined, 'المدينة', city),
+                                _infoRow(
+                                  Icons.location_city_outlined,
+                                  'المدينة',
+                                  city,
+                                ),
                               ],
                               if (district.isNotEmpty) ...[
                                 const SizedBox(height: 8),
@@ -807,49 +772,50 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                       final items = data['items'] ?? [];
 
                       return Container(
-                        margin:
-                            const EdgeInsets.only(bottom: AppDesign.spaceSM),
+                        margin: const EdgeInsets.only(
+                          bottom: AppDesign.spaceSM,
+                        ),
                         decoration: AppDesign.softCardDecoration,
                         child: ExpansionTile(
                           tilePadding: const EdgeInsets.symmetric(
                             horizontal: AppDesign.spaceMD,
                             vertical: AppDesign.spaceSM,
                           ),
-                         title: Row(
-  textDirection: TextDirection.rtl,
-  children: [
-    Row(
-      textDirection: TextDirection.rtl,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          statusIcon,
-          size: 18,
-          color: statusColor,
-        ),
-        const SizedBox(width: 5),
-        Text(
-          status,
-          style: AppDesign.captionStyle.copyWith(
-            color: statusColor,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    ),
-    AppGap.wMD,
-    Expanded(
-      child: Text(
-        boxCode,
-        textAlign: TextAlign.right,
-        style: AppDesign.h2Style.copyWith(
-          color: AppDesign.primary,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    ),
-  ],
-),
+                          title: Row(
+                            textDirection: TextDirection.rtl,
+                            children: [
+                              Row(
+                                textDirection: TextDirection.rtl,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    statusIcon,
+                                    size: 18,
+                                    color: statusColor,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    status,
+                                    style: AppDesign.captionStyle.copyWith(
+                                      color: statusColor,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              AppGap.wMD,
+                              Expanded(
+                                child: Text(
+                                  boxCode,
+                                  style: AppDesign.h2Style.copyWith(
+                                    color: AppDesign.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                            ],
+                          ),
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(AppDesign.spaceMD),
@@ -859,15 +825,19 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
                                   return Container(
                                     margin: const EdgeInsets.only(
-                                        bottom: AppDesign.spaceSM),
+                                      bottom: AppDesign.spaceSM,
+                                    ),
                                     padding: const EdgeInsets.all(
-                                        AppDesign.spaceSM),
+                                      AppDesign.spaceSM,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: AppDesign.surface,
                                       borderRadius: BorderRadius.circular(
-                                          AppDesign.radiusMD),
-                                      border:
-                                          Border.all(color: AppDesign.border),
+                                        AppDesign.radiusMD,
+                                      ),
+                                      border: Border.all(
+                                        color: AppDesign.border,
+                                      ),
                                     ),
                                     child: Row(
                                       children: [
@@ -879,23 +849,29 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                                             ? ClipRRect(
                                                 borderRadius:
                                                     BorderRadius.circular(
-                                                        AppDesign.radiusSM),
+                                                      AppDesign.radiusSM,
+                                                    ),
                                                 child: Image.network(
                                                   item['imageUrl'],
                                                   width: 55,
                                                   height: 55,
                                                   fit: BoxFit.cover,
-                                                  errorBuilder: (context,
-                                                      error, stackTrace) {
-                                                    return Container(
-                                                      width: 55,
-                                                      height: 55,
-                                                      color:
-                                                          AppDesign.surfaceAlt,
-                                                      child: const Icon(
-                                                          Icons.broken_image),
-                                                    );
-                                                  },
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) {
+                                                        return Container(
+                                                          width: 55,
+                                                          height: 55,
+                                                          color: AppDesign
+                                                              .surfaceAlt,
+                                                          child: const Icon(
+                                                            Icons.broken_image,
+                                                          ),
+                                                        );
+                                                      },
                                                 ),
                                               )
                                             : Container(
@@ -905,10 +881,12 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                                                   color: AppDesign.surfaceAlt,
                                                   borderRadius:
                                                       BorderRadius.circular(
-                                                          AppDesign.radiusSM),
+                                                        AppDesign.radiusSM,
+                                                      ),
                                                 ),
                                                 child: const Icon(
-                                                    Icons.image_not_supported),
+                                                  Icons.image_not_supported,
+                                                ),
                                               ),
                                         AppGap.wMD,
                                         Expanded(
@@ -920,8 +898,9 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                                                 "القطعة ${index + 1}",
                                                 style: AppDesign.bodyStyle
                                                     .copyWith(
-                                                  fontWeight: FontWeight.w700,
-                                                ),
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
@@ -969,9 +948,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                   child: OutlinedButton.icon(
                     onPressed: () => _openEditDonation(doc),
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                     icon: const Icon(Icons.edit_outlined),
                     label: const Text('تعديل'),
@@ -982,9 +959,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                   child: OutlinedButton.icon(
                     onPressed: () => _deleteDonation(doc.id),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                       foregroundColor: AppDesign.error,
                       side: const BorderSide(color: AppDesign.error),
                     ),
@@ -997,9 +972,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                   child: ElevatedButton.icon(
                     onPressed: () => _moveDraftToConfirmed(doc.id),
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                     icon: const Icon(Icons.check),
                     label: const Text('تأكيد'),
@@ -1139,8 +1112,10 @@ class _ViewDonationPageState extends State<ViewDonationPage>
           ),
           NavigationDestination(
             icon: Icon(Icons.more_horiz_rounded, color: AppDesign.primary),
-            selectedIcon:
-                Icon(Icons.more_horiz_rounded, color: AppDesign.primary),
+            selectedIcon: Icon(
+              Icons.more_horiz_rounded,
+              color: AppDesign.primary,
+            ),
             label: 'المزيد',
           ),
         ],
@@ -1222,8 +1197,9 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                       labelColor: AppDesign.white,
                       unselectedLabelColor: AppDesign.primary,
                       dividerColor: Colors.transparent,
-                      splashBorderRadius:
-                          BorderRadius.circular(AppDesign.radiusMD),
+                      splashBorderRadius: BorderRadius.circular(
+                        AppDesign.radiusMD,
+                      ),
                       labelStyle: AppDesign.bodyStyle.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -1325,8 +1301,10 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
 
     final raw = capture.barcodes
         .map((b) => b.rawValue)
-        .firstWhere((v) => v != null && v.trim().isNotEmpty,
-            orElse: () => null);
+        .firstWhere(
+          (v) => v != null && v.trim().isNotEmpty,
+          orElse: () => null,
+        );
     if (raw == null) return;
 
     setState(() => _busy = true);
