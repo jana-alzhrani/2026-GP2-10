@@ -4,19 +4,19 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_design.dart';
 
-class DeliveryMethodPage extends StatefulWidget {
-  final String donationId;
+class DonorDeliveryPage extends StatefulWidget {
+    final String donationId;
 
-  const DeliveryMethodPage({
+  const DonorDeliveryPage({
     super.key,
     required this.donationId,
   });
 
   @override
-  State<DeliveryMethodPage> createState() => _DeliveryMethodPageState();
+  State<DonorDeliveryPage> createState() => _DonorDeliveryPageState();
 }
 
-class _DeliveryMethodPageState extends State<DeliveryMethodPage> {
+class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _shortAddressController =
       TextEditingController();
