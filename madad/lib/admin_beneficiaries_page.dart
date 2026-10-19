@@ -198,6 +198,13 @@ void _addBeneficiaryNotificationToBatch({
         },
       );
 
+      // توحيد الحالة في Users
+      batch.set(
+        _firestore.collection('Users').doc(beneficiaryUserId),
+        {'status': 'approved'},
+        SetOptions(merge: true),
+      );
+
 _addBeneficiaryNotificationToBatch(
   batch: batch,
   beneficiaryUserId: beneficiaryUserId,
@@ -381,6 +388,13 @@ _addBeneficiaryNotificationToBatch(
         },
       );
 
+      // توحيد الحالة في Users
+      batch.set(
+        _firestore.collection('Users').doc(beneficiaryUserId),
+        {'status': 'rejected'},
+        SetOptions(merge: true),
+      );
+
 _addBeneficiaryNotificationToBatch(
   batch: batch,
   beneficiaryUserId: beneficiaryUserId,
@@ -432,12 +446,67 @@ _addBeneficiaryNotificationToBatch(
       final beneficiaryRef =
           _firestore.collection('beneficiaries').doc(beneficiaryId);
 
-      // Soft Delete
-      await beneficiaryRef.update({
+      final batch = _firestore.batch();
+
+      // 1) Soft Delete: إيقاف الحساب في beneficiaries و Users
+      batch.update(beneficiaryRef, {
         'status': 'deleted',
         'deletedAt': FieldValue.serverTimestamp(),
         'deletedBy': widget.userId,
       });
+
+      batch.set(
+        _firestore.collection('Users').doc(beneficiaryUserId),
+        {'status': 'deleted'},
+        SetOptions(merge: true),
+      );
+
+      // 2) تفريغ سلة المستفيد
+      final cartSnap = await _firestore
+          .collection('cart')
+          .where('beneficiaryId', isEqualTo: beneficiaryUserId)
+          .where('status', isEqualTo: 'in_cart')
+          .get();
+
+      for (final cartDoc in cartSnap.docs) {
+        batch.delete(cartDoc.reference);
+      }
+
+      // 3) إلغاء الطلبات اللي ما قبلها مندوب، وإرجاع صناديقها متاحة
+      final requestsSnap = await _firestore
+          .collection('requests')
+          .where('beneficiaryId', isEqualTo: beneficiaryUserId)
+          .where('status', isEqualTo: 'requested')
+          .get();
+
+      for (final requestDoc in requestsSnap.docs) {
+        final requestData = requestDoc.data();
+        final courierId =
+            requestData['courierID'] ?? requestData['courierId'];
+
+        // الطلب اللي قبله مندوب يكمل عادي
+        if (courierId != null && courierId.toString().isNotEmpty) continue;
+
+        batch.update(requestDoc.reference, {
+          'status': 'cancelled',
+          'cancelledAt': FieldValue.serverTimestamp(),
+          'cancelReason': 'beneficiary_deleted',
+        });
+
+        final boxesSnap = await _firestore
+            .collection('donation_boxes')
+            .where('requestId', isEqualTo: requestDoc.id)
+            .get();
+
+        for (final boxDoc in boxesSnap.docs) {
+          batch.update(boxDoc.reference, {
+            'status': 'available',
+            'requestId': FieldValue.delete(),
+          });
+        }
+      }
+
+      await batch.commit();
 
       if (!mounted) return;
 
