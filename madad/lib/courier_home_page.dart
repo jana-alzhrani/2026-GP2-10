@@ -505,8 +505,9 @@ class _CourierHomePageState extends State<CourierHomePage> {
                                               'صندوق',
                                         )
                                         .toList();
-                                    if (boxCodes.isEmpty)
+                                    if (boxCodes.isEmpty) {
                                       boxCodes = ['لا توجد صناديق مضافة'];
+                                    }
 
                                     return Container(
                                       margin: const EdgeInsets.only(bottom: 16),
@@ -731,6 +732,22 @@ class _CourierHomePageState extends State<CourierHomePage> {
                                       .toString()
                                 : 'المستودع';
 
+                            String deliveryAddressText = 'عنوان المستفيد';
+                            if (addressMap is Map) {
+                              final city = addressMap['city'] ?? '';
+                              final district = addressMap['district'] ?? '';
+
+                              List<String> addressParts = [];
+                              if (city.isNotEmpty) addressParts.add(city);
+                              if (district.isNotEmpty) {
+                                addressParts.add(district);
+                              }
+
+                              if (addressParts.isNotEmpty) {
+                                deliveryAddressText = addressParts.join(' - ');
+                              }
+                            }
+
                             return FutureBuilder<DocumentSnapshot>(
                               future:
                                   beneficiaryId.isNotEmpty &&
@@ -820,8 +837,8 @@ class _CourierHomePageState extends State<CourierHomePage> {
                                             style: AppDesign.bodySecondaryStyle,
                                           ),
                                           const SizedBox(height: 4),
-                                          const Text(
-                                            'موقع التسليم: عنوان المستفيد',
+                                          Text(
+                                            '$deliveryAddressText: عنوان المستفيد',
                                             style: AppDesign.bodySecondaryStyle,
                                           ),
                                           const SizedBox(height: 8),
