@@ -14,7 +14,7 @@ import 'donor_more_page.dart';
 import 'app_design.dart';
 import 'Beneficiary_home_page.dart';
 import 'add_donation_page.dart';
-import 'donor_delivery_method_page.dart';
+import 'delivery_method_page.dart';
 import 'courier_home_page.dart';
 import 'admin_home_page.dart';
 import 'admin_beneficiaries_page.dart';
