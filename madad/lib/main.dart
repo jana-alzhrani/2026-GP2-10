@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:madad_app/firebase_options.dart';
-
 import 'auth_gate.dart';
 import 'welcome_page.dart';
 import 'login_page.dart';
@@ -13,8 +12,8 @@ import 'view_donation_page.dart';
 import 'donor_more_page.dart';
 import 'app_design.dart';
 import 'Beneficiary_home_page.dart';
+import 'donor_delivery_method_page.dart';
 import 'add_donation_page.dart';
-import 'delivery_method_page.dart';
 import 'courier_home_page.dart';
 import 'admin_home_page.dart';
 import 'admin_beneficiaries_page.dart';
@@ -89,11 +88,11 @@ class MyApp extends StatelessWidget {
           return DonorMorePage(userId: uid);
         },
 
-        '/deliveryMethod': (context) {
+        '/donorDelivery': (context) {
           final donationId =
               ModalRoute.of(context)?.settings.arguments as String? ?? '';
 
-          return DeliveryMethodPage(donationId: donationId);
+          return DonorDeliveryPage(donationId: donationId);
         },
 
         '/courierHome': (context) {
