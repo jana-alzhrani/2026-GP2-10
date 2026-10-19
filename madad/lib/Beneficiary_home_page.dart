@@ -23,6 +23,9 @@ class BeneficiaryHomePage extends StatefulWidget {
 class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
   int _bottomNavIndex = 0;
 
+  String beneficiaryStatus = 'pending';
+  bool _beneficiaryStatusLoaded = false;
+
   String selectedGender = "الكل";
   String selectedAge = "الكل";
 
@@ -37,6 +40,7 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     super.initState();
     loadUserData();
     loadBoxes();
+    loadBeneficiaryStatus();
   }
 
   // ============================================================
@@ -93,7 +97,13 @@ if (beneficiaryDoc == null || status != 'approved') {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text(message),
+            content: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text(
+                message,
+                textAlign: TextAlign.right,
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -118,6 +128,33 @@ if (beneficiaryDoc == null || status != 'approved') {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+}
+Future<void> loadBeneficiaryStatus() async {
+  try {
+    final query = await FirebaseFirestore.instance
+        .collection('beneficiaries')
+        .where('userId', isEqualTo: widget.userId)
+        .limit(1)
+        .get();
+
+    if (!mounted) return;
+
+    setState(() {
+      beneficiaryStatus = query.docs.isNotEmpty
+          ? (query.docs.first.data()['status'] ?? 'pending')
+              .toString()
+              .trim()
+              .toLowerCase()
+          : 'pending';
+      _beneficiaryStatusLoaded = true;
+    });
+  } catch (e) {
+    debugPrint('BENEFICIARY STATUS ERROR: $e');
+    if (!mounted) return;
+    setState(() {
+      _beneficiaryStatusLoaded = true;
+    });
   }
 }
 
@@ -685,7 +722,20 @@ Future<void> _showNoNotifications() async {
             ),
           ],
         ),
-        child: Directionality(
+        child: !_beneficiaryStatusLoaded
+            ? const SizedBox(
+                height: 78,
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  ),
+                ),
+              )
+            : Directionality(
           textDirection: TextDirection.rtl,
           child: NavigationBar(
             height: 78,
@@ -698,62 +748,78 @@ Future<void> _showNoNotifications() async {
                 NavigationDestinationLabelBehavior
                     .alwaysShow,
             onDestinationSelected: (index) {
-              if (index == 0) {
-                setState(() {
-                  _bottomNavIndex = 0;
-                });
-                return;
-              }
+  final isApproved = beneficiaryStatus == 'approved';
 
-              setState(() {
-                _bottomNavIndex = index;
-              });
+  if (index == 0) {
+    setState(() => _bottomNavIndex = 0);
+    return;
+  }
 
-              if (index == 1) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        BeneficiaryOrdersPage(
-                      userId: widget.userId,
-                    ),
-                  ),
-                );
-              } else if (index == 2) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        BeneficiaryMorePage(
-                      userId: widget.userId,
-                    ),
-                  ),
-                );
-              }
-            },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon:
-                    Icon(Icons.home_rounded),
-                label: 'الرئيسية',
-              ),
-              NavigationDestination(
-                icon: Icon(
-                  Icons.volunteer_activism_outlined,
-                ),
-                selectedIcon: Icon(
-                  Icons.volunteer_activism_rounded,
-                ),
-                label: 'طلباتي',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.more_horiz),
-                selectedIcon:
-                    Icon(Icons.more_horiz),
-                label: 'المزيد',
-              ),
-            ],
+  // إذا لم يكن المستفيد موافقًا عليه:
+  // الفهرس 1 يعني صفحة المزيد
+  if (!isApproved && index == 1) {
+    setState(() => _bottomNavIndex = 1);
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BeneficiaryMorePage(
+          userId: widget.userId,
+        ),
+      ),
+    );
+    return;
+  }
+
+  // إذا كان المستفيد موافقًا عليه:
+  if (isApproved && index == 1) {
+    setState(() => _bottomNavIndex = 1);
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BeneficiaryOrdersPage(
+          userId: widget.userId,
+        ),
+      ),
+    );
+    return;
+  }
+
+  // المزيد للمستفيد الموافق عليه، عند الفهرس 2
+  if (isApproved && index == 2) {
+    setState(() => _bottomNavIndex = 2);
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BeneficiaryMorePage(
+          userId: widget.userId,
+        ),
+      ),
+    );
+  }
+},
+            destinations: [
+  const NavigationDestination(
+    icon: Icon(Icons.home_outlined),
+    selectedIcon: Icon(Icons.home_rounded),
+    label: 'الرئيسية',
+  ),
+
+  if (beneficiaryStatus == 'approved')
+    const NavigationDestination(
+      icon: Icon(Icons.volunteer_activism_outlined),
+      selectedIcon: Icon(Icons.volunteer_activism_rounded),
+      label: 'طلباتي',
+    ),
+
+  const NavigationDestination(
+    icon: Icon(Icons.more_horiz),
+    selectedIcon: Icon(Icons.more_horiz),
+    label: 'المزيد',
+  ),
+],
           ),
         ),
       ),
