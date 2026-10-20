@@ -170,14 +170,13 @@ class _AddCourierPageState extends State<AddCourierPage> {
         'firstName': firstName,
         'lastName': lastName,
         'phone': phone,
-        'phoneNumber': normalizedPhone,
         'role': 'courier',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       batch.set(courierRef, {
         'userID': userId,
-        'statues': status,
+        'status': status,
         'city': city,
         'completedDeliveries': 0,
       });
