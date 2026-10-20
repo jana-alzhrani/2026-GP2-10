@@ -323,7 +323,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       }
 
       final donationData = donationDoc.data() as Map<String, dynamic>;
-      final donorId = donationData['donorID']?.toString();
+      final donorId = donationData['donorId']?.toString();
 
       if (donorId != currentUser.uid) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -990,7 +990,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('donations')
-          .where('donorID', isEqualTo: widget.userId)
+          .where('donorId', isEqualTo: widget.userId)
           .orderBy(sortField, descending: true)
           .snapshots(),
       builder: (context, snapshot) {
