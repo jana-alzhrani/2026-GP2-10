@@ -1021,16 +1021,24 @@ class _DonorEditNameSheetState
 
                 const SizedBox(height: 8),
 
-                TextButton(
-                  onPressed: _saving
-                      ? null
-                      : () => Navigator.pop(
-                            context,
-                          ),
-                  child: Text(
-                    'إلغاء',
-                    style: TextStyle(
-                      color: AppDesign.primary,
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton(
+                    onPressed: _saving ? null : () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppDesign.primary,
+                      side: const BorderSide(color: AppDesign.primary, width: 1.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppDesign.radiusLG),
+                      ),
+                    ),
+                    child: const Text(
+                      'إلغاء',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ),
