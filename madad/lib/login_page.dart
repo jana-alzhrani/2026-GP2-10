@@ -52,6 +52,19 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
+      // الحساب موقوف (محذوف من الأدمن): لا نرسل كود التحقق
+      final accountStatus = (userCheck.docs.first.data()['status'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+
+      if (accountStatus == 'deleted') {
+        setState(() {
+          emailError = "تم إيقاف هذا الحساب";
+        });
+        return;
+      }
+
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phoneText.startsWith('0')
             ? "+966${phoneText.substring(1)}"
