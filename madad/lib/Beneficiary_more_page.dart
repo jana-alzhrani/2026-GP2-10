@@ -131,39 +131,21 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
   }
 
   Future<void> _showLogoutDialog() async {
-    showDialog(
+    final confirm = await AppDesign.showAppDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('تسجيل الخروج', textAlign: TextAlign.center),
-        content: const Text(
-          'هل أنت متأكد من تسجيل الخروج؟',
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.spaceEvenly,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('إلغاء',
-                style: TextStyle(color: Color.fromARGB(255, 10, 77, 92))),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              await FirebaseAuth.instance.signOut();
-
-              if (!mounted) return;
-
-              Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-            },
-            child: const Text(
-              'تسجيل الخروج',
-              style: TextStyle(color: Color.fromARGB(255, 10, 77, 92)),
-            ),
-          ),
-        ],
-      ),
+      title: 'تسجيل الخروج',
+      message: 'هل أنت متأكد من تسجيل الخروج؟',
+      confirmText: 'تسجيل الخروج',
+      cancelText: 'إلغاء',
     );
+
+    if (!confirm) return;
+
+    await FirebaseAuth.instance.signOut();
+
+    if (!mounted) return;
+
+    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
   @override
