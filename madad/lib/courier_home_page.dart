@@ -35,13 +35,13 @@ class _CourierHomePageState extends State<CourierHomePage> {
 
       final donationsSnapshot = await FirebaseFirestore.instance
           .collection('donations')
-          .where('courierID', isEqualTo: widget.userId)
+          .where('courierId', isEqualTo: widget.userId)
           .where('courierTaskStatus', isEqualTo: 'completed')
           .get();
 
       final requestsSnapshot = await FirebaseFirestore.instance
           .collection('requests')
-          .where('courierID', isEqualTo: widget.userId)
+          .where('courierId', isEqualTo: widget.userId)
           .where('courierTaskStatus', isEqualTo: 'completed')
           .get();
 
@@ -400,13 +400,13 @@ class _CourierHomePageState extends State<CourierHomePage> {
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('donations')
-                    .where('courierID', isEqualTo: widget.userId)
+                    .where('courierId', isEqualTo: widget.userId)
                     .snapshots(),
                 builder: (context, donationsSnap) {
                   return StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection('requests')
-                        .where('courierID', isEqualTo: widget.userId)
+                        .where('courierId', isEqualTo: widget.userId)
                         .snapshots(),
                     builder: (context, requestsSnap) {
                       if (donationsSnap.connectionState ==
@@ -472,7 +472,7 @@ class _CourierHomePageState extends State<CourierHomePage> {
                                 ? rawDistrict
                                 : 'لا يوجد';
 
-                            final donorId = data['donorID'] ?? '';
+                            final donorId = data['donorId'] ?? '';
                             final originalStatus =
                                 data['originalStatus'] ?? 'published';
 
