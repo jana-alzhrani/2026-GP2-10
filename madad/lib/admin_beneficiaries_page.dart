@@ -198,13 +198,6 @@ void _addBeneficiaryNotificationToBatch({
         },
       );
 
-      // توحيد الحالة في Users
-      batch.set(
-        _firestore.collection('Users').doc(beneficiaryUserId),
-        {'status': 'approved'},
-        SetOptions(merge: true),
-      );
-
 _addBeneficiaryNotificationToBatch(
   batch: batch,
   beneficiaryUserId: beneficiaryUserId,
@@ -255,103 +248,125 @@ _addBeneficiaryNotificationToBatch(
             return Directionality(
               textDirection: TextDirection.rtl,
               child: AlertDialog(
-                backgroundColor: AppDesign.white,
+                backgroundColor: const Color(0xFFF7FAFB),
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                insetPadding: const EdgeInsets.symmetric(horizontal: 50),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                title: Text(
-                  'رفض الطلب',
-                  textAlign: TextAlign.center,
-                  style: AppDesign.h1Style.copyWith(
-                    color: AppDesign.primary,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'يرجى كتابة سبب رفض طلب $name',
-                      textAlign: TextAlign.center,
-                      style: AppDesign.bodyStyle.copyWith(
-                        color: AppDesign.textSecondary,
-                      ),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    TextField(
-                      controller: controller,
-                      maxLines: 4,
-                      textDirection: TextDirection.rtl,
-                      decoration: InputDecoration(
-                        hintText: 'سبب الرفض',
-                        errorText: errorText,
-                        filled: true,
-                        fillColor: AppDesign.background,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: AppDesign.border,
+                contentPadding: EdgeInsets.zero,
+                content: SizedBox(
+                  width: 260,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 20, 18, 14),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'رفض الطلب',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: AppDesign.fontFamily,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black,
                           ),
                         ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: AppDesign.border,
+
+                        const SizedBox(height: 12),
+
+                        Text(
+                          'يرجى كتابة سبب رفض طلب $name',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontFamily: AppDesign.fontFamily,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.black,
+                            height: 1.15,
                           ),
                         ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                            color: AppDesign.primary,
-                            width: 1.5,
+
+                        const SizedBox(height: 14),
+
+                        TextField(
+                          controller: controller,
+                          maxLines: 3,
+                          textDirection: TextDirection.rtl,
+                          style: const TextStyle(
+                            fontFamily: AppDesign.fontFamily,
+                            fontSize: 13,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'سبب الرفض',
+                            errorText: errorText,
+                            isDense: true,
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppDesign.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppDesign.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: AppDesign.primary,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+
+                        const SizedBox(height: 8),
+
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialogContext),
+                              child: const Text(
+                                'إلغاء',
+                                style: TextStyle(
+                                  fontFamily: AppDesign.fontFamily,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                final value = controller.text.trim();
+
+                                if (value.isEmpty) {
+                                  setDialogState(() {
+                                    errorText = 'سبب الرفض مطلوب';
+                                  });
+                                  return;
+                                }
+
+                                Navigator.pop(dialogContext, value);
+                              },
+                              child: const Text(
+                                'رفض',
+                                style: TextStyle(
+                                  fontFamily: AppDesign.fontFamily,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-                actionsAlignment: MainAxisAlignment.center,
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                    },
-                    child: Text(
-                      'إلغاء',
-                      style: AppDesign.bodyStyle.copyWith(
-                        color: AppDesign.textSecondary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-
-                  ElevatedButton(
-                    onPressed: () {
-                      final value = controller.text.trim();
-
-                      if (value.isEmpty) {
-                        setDialogState(() {
-                          errorText = 'سبب الرفض مطلوب';
-                        });
-                        return;
-                      }
-
-                      Navigator.pop(dialogContext, value);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade700,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text('رفض الطلب'),
-                  ),
-                ],
               ),
             );
           },
@@ -386,13 +401,6 @@ _addBeneficiaryNotificationToBatch(
           'approvedAt': FieldValue.delete(),
           'approvedBy': FieldValue.delete(),
         },
-      );
-
-      // توحيد الحالة في Users
-      batch.set(
-        _firestore.collection('Users').doc(beneficiaryUserId),
-        {'status': 'rejected'},
-        SetOptions(merge: true),
       );
 
 _addBeneficiaryNotificationToBatch(
@@ -537,72 +545,13 @@ _addBeneficiaryNotificationToBatch(
     required String message,
     required String confirmText,
     bool destructive = false,
-  }) async {
-    final result = await showDialog<bool>(
+  }) {
+    return AppDesign.showAppDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            backgroundColor: AppDesign.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
-            ),
-            title: Text(
-              title,
-              textAlign: TextAlign.center,
-              style: AppDesign.h1Style.copyWith(
-                color: AppDesign.primary,
-                fontSize: 21,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            content: Text(
-              message,
-              textAlign: TextAlign.center,
-              style: AppDesign.bodyStyle.copyWith(
-                color: AppDesign.textSecondary,
-                height: 1.6,
-              ),
-            ),
-            actionsAlignment: MainAxisAlignment.center,
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext, false);
-                },
-                child: Text(
-                  'إلغاء',
-                  style: AppDesign.bodyStyle.copyWith(
-                    color: AppDesign.textSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext, true);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: destructive
-                      ? Colors.red.shade700
-                      : AppDesign.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                child: Text(confirmText),
-              ),
-            ],
-          ),
-        );
-      },
+      title: title,
+      message: message,
+      confirmText: confirmText,
     );
-
-    return result ?? false;
   }
 
   // =========================================================
@@ -1236,7 +1185,7 @@ _addBeneficiaryNotificationToBatch(
 
                     SizedBox(
                       height: 52,
-                      child: TextButton.icon(
+                      child: OutlinedButton.icon(
                         onPressed: () {
                           _showRejectDialog(
                             beneficiaryId:
@@ -1248,13 +1197,22 @@ _addBeneficiaryNotificationToBatch(
                         },
                         icon: Icon(
                           Icons.close_rounded,
-                          color: Colors.red.shade700,
+                          color: AppDesign.primary,
                         ),
                         label: Text(
                           'رفض الطلب',
                           style: TextStyle(
-                            color: Colors.red.shade700,
+                            color: AppDesign.primary,
                             fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(
+                            color: AppDesign.primary,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(18),
                           ),
                         ),
                       ),
@@ -1264,7 +1222,7 @@ _addBeneficiaryNotificationToBatch(
                   if (status == 'approved')
                     SizedBox(
                       height: 52,
-                      child: TextButton.icon(
+                      child: OutlinedButton.icon(
                         onPressed: () {
                           _deleteBeneficiary(
                             beneficiaryId:
@@ -1276,13 +1234,22 @@ _addBeneficiaryNotificationToBatch(
                         },
                         icon: Icon(
                           Icons.delete_outline_rounded,
-                          color: Colors.red.shade700,
+                          color: AppDesign.primary,
                         ),
                         label: Text(
                           'حذف المستفيد',
                           style: TextStyle(
-                            color: Colors.red.shade700,
+                            color: AppDesign.primary,
                             fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(
+                            color: AppDesign.primary,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(18),
                           ),
                         ),
                       ),
