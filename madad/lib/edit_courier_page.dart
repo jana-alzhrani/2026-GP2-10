@@ -92,7 +92,7 @@ class _EditCourierPageState extends State<EditCourierPage> {
       // المدينة دائمًا Riyadh
       cityController.text = 'Riyadh';
 
-      status = courierData['statues']?.toString() ?? 'active';
+      status = courierData['status']?.toString() ?? 'active';
 
       if (!mounted) return;
 
@@ -301,14 +301,13 @@ class _EditCourierPageState extends State<EditCourierPage> {
         'firstName': firstName,
         'lastName': lastName,
         'phone': phone,
-        'phoneNumber': normalizedPhone,
       });
 
       final courierRef = _firestore
           .collection('couriers')
           .doc(widget.courierId);
 
-      batch.update(courierRef, {'statues': status, 'city': city});
+      batch.update(courierRef, {'status': status, 'city': city});
 
       await batch.commit();
 
