@@ -20,11 +20,9 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
   }
 
   String _getStatus(Map<String, dynamic> data) {
-    final status = (data['statues'] ?? data['status'] ?? 'غير محدد')
-        .toString()
-        .trim();
+    final status = (data['status'] ?? 'active').toString().trim();
 
-    return status.isEmpty ? 'غير محدد' : status;
+    return status.isEmpty ? 'active' : status;
   }
 
   String _displayStatus(String status) {
@@ -40,6 +38,46 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
 
   bool _isActive(String status) {
     return status.toLowerCase() == 'active' || status == 'نشط';
+  }
+
+  // حساب الرحلات المكتملة بنفس طريقة CourierHomePage
+  Future<int> _getCompletedDeliveries(String userId) async {
+    // حساب التبرعات المكتملة
+    final donationsSnapshot = await _firestore
+        .collection('donations')
+        .where('courierId', isEqualTo: userId)
+        .where('courierTaskStatus', isEqualTo: 'completed')
+        .get();
+
+    final requestsSnapshot = await _firestore
+        .collection('requests')
+        .where('courierId', isEqualTo: userId)
+        .where('courierTaskStatus', isEqualTo: 'completed')
+        .get();
+
+    final completedCount =
+        donationsSnapshot.docs.length + requestsSnapshot.docs.length;
+
+    // البحث عن وثيقة المندوب في مجموعة couriers
+    final courierSnapshot = await _firestore
+        .collection('couriers')
+        .where('userID', isEqualTo: userId)
+        .limit(1)
+        .get();
+
+    // تحديث العدد في Firebase إذا كان مختلفًا
+    if (courierSnapshot.docs.isNotEmpty) {
+      final courierDoc = courierSnapshot.docs.first;
+      final currentCount = courierDoc.data()['completedDeliveries'];
+
+      if (currentCount != completedCount) {
+        await courierDoc.reference.update({
+          'completedDeliveries': completedCount,
+        });
+      }
+    }
+
+    return completedCount;
   }
 
   // إضافة مندوب
@@ -71,13 +109,12 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     }
   }
 
-  // حذف المندوب
+  // حذف منطقي للمندوب مع تحرير مهامه النشطة
   Future<void> _deleteCourier(String courierId) async {
     try {
-      final courierDoc = await _firestore
-          .collection('couriers')
-          .doc(courierId)
-          .get();
+      final courierRef = _firestore.collection('couriers').doc(courierId);
+
+      final courierDoc = await courierRef.get();
 
       if (!courierDoc.exists) {
         if (!mounted) return;
@@ -87,24 +124,26 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
       }
 
       final data = courierDoc.data() ?? <String, dynamic>{};
-      final userId = data['userID']?.toString() ?? '';
+      final userId = (data['userID'] ?? '').toString().trim();
 
       final batch = _firestore.batch();
 
-      // 1) Soft Delete: إيقاف الحساب في couriers و Users
-      batch.update(_firestore.collection('couriers').doc(courierId), {
-        'statues': 'deleted',
+      // 1) الاحتفاظ بوثيقة المندوب وتغيير حالتها إلى deleted.
+      // نحدّث الحقلين لدعم البيانات القديمة التي تستخدم statues.
+      batch.update(courierRef, {
+        'status': 'deleted',
         'deletedAt': FieldValue.serverTimestamp(),
       });
 
       if (userId.isNotEmpty) {
-        batch.set(
-          _firestore.collection('Users').doc(userId),
-          {'status': 'deleted'},
-          SetOptions(merge: true),
-        );
+        // تحديث حالة حساب المستخدم دون حذف بياناته.
+        // merge يمنع استبدال بقية بيانات المستخدم.
+        batch.set(_firestore.collection('Users').doc(userId), {
+          'status': 'deleted',
+          'deletedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
 
-        // 2) إرجاع مهامه النشطة متاحة لباقي المناديب
+        // 2) تحرير المهام النشطة في التبرعات وطلبات المستفيدين.
         for (final collection in ['donations', 'requests']) {
           final tasksSnap = await _firestore
               .collection(collection)
@@ -113,12 +152,15 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
               .get();
 
           for (final taskDoc in tasksSnap.docs) {
+            // إزالة ارتباط المهمة بالمندوب حتى يمكن إسنادها
+            // إلى مندوب آخر لاحقًا.
             batch.update(taskDoc.reference, {
               'courierID': FieldValue.delete(),
               'courierTaskStatus': FieldValue.delete(),
               'acceptedAt': FieldValue.delete(),
             });
 
+            // إزالة ارتباط المندوب بالصناديق التابعة للمهمة.
             final boxesSnap = await _firestore
                 .collection('donation_boxes')
                 .where(
@@ -136,6 +178,7 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
         }
       }
 
+      // تنفيذ عمليات التحديث
       await batch.commit();
 
       if (!mounted) return;
@@ -216,13 +259,13 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                       );
                     }
 
-                    // إخفاء المناديب المحذوفين
-                    final docs = (snapshot.data?.docs ?? [])
-                        .where(
-                          (d) =>
-                              _getStatus(d.data()).toLowerCase() != 'deleted',
-                        )
-                        .toList();
+                    // إخفاء المناديب المحذوفين من القائمة
+                    // مع إبقاء بياناتهم في Firestore.
+                    final docs = (snapshot.data?.docs ?? []).where((doc) {
+                      final status = _getStatus(doc.data()).toLowerCase();
+
+                      return status != 'deleted';
+                    }).toList();
 
                     if (docs.isEmpty) {
                       return _buildEmptyState();
@@ -273,20 +316,31 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                                         'غير متوفر')
                                     .toString();
 
-                            final completedDeliveries =
-                                (data['completedDeliveries'] as num?)
-                                    ?.toInt() ??
-                                0;
+                            // جلب عدد الرحلات المكتملة من Firestore
+                            return FutureBuilder<int>(
+                              future: _getCompletedDeliveries(userId),
+                              builder: (context, completedSnapshot) {
+                                if (completedSnapshot.hasError) {
+                                  debugPrint(
+                                    'Completed Deliveries Error: '
+                                    '${completedSnapshot.error}',
+                                  );
+                                }
 
-                            return _buildCourierCard(
-                              courierId: doc.id,
-                              userId: userId,
-                              courierName: name.isEmpty
-                                  ? 'اسم غير متوفر'
-                                  : name,
-                              phone: phone,
-                              status: status,
-                              completedDeliveries: completedDeliveries,
+                                final completedDeliveries =
+                                    completedSnapshot.data ?? 0;
+
+                                return _buildCourierCard(
+                                  courierId: doc.id,
+                                  userId: userId,
+                                  courierName: name.isEmpty
+                                      ? 'اسم غير متوفر'
+                                      : name,
+                                  phone: phone,
+                                  status: status,
+                                  completedDeliveries: completedDeliveries,
+                                );
+                              },
                             );
                           },
                         );
@@ -302,6 +356,7 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     );
   }
 
+  // عنوان الصفحة
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
@@ -321,7 +376,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                 ),
               ),
             ),
-
             Positioned(
               left: 0,
               child: IconButton(
@@ -415,7 +469,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
           ),
         ],
       ),
-
       child: Column(
         children: [
           // الاسم ورقم الجوال والصورة والحالة
@@ -616,7 +669,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
           ),
         ],
       ),
-
       child: Column(
         children: [
           const Icon(
