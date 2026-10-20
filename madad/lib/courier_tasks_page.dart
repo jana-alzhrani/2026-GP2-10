@@ -359,7 +359,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      _selectedTab == 1 ? 'مكتمل' : '',
+                      _selectedTab == 1 ? 'مكتمل' : 'متاح',
                       style: AppDesign.captionStyle.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -564,7 +564,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          _selectedTab == 1 ? 'مكتمل' : '',
+                          _selectedTab == 1 ? 'مكتمل' : 'متاح',
                           style: AppDesign.captionStyle.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
