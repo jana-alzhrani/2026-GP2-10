@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'donor_home_page.dart';
-import 'beneficiary_home_page.dart';
+import 'Beneficiary_home_page.dart';
 import 'welcome_page.dart';
 import 'admin_home_page.dart';
 import 'courier_home_page.dart';
@@ -31,6 +31,13 @@ class AuthGate extends StatelessWidget {
       }
 
       final data = doc.data()!;
+
+      // الحساب موقوف (محذوف من الأدمن)
+      if ((data['status'] ?? '').toString().trim().toLowerCase() ==
+          'deleted') {
+        await FirebaseAuth.instance.signOut();
+        return const WelcomePage();
+      }
       final role = (data['role'] ?? '').toString().trim().toLowerCase();
       if (role == 'beneficiary') {
         return BeneficiaryHomePage(userId: userId);
