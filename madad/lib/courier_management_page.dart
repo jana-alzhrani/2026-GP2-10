@@ -91,10 +91,49 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
 
       final batch = _firestore.batch();
 
-      batch.delete(_firestore.collection('couriers').doc(courierId));
+      // 1) Soft Delete: إيقاف الحساب في couriers و Users
+      batch.update(_firestore.collection('couriers').doc(courierId), {
+        'statues': 'deleted',
+        'deletedAt': FieldValue.serverTimestamp(),
+      });
 
       if (userId.isNotEmpty) {
-        batch.delete(_firestore.collection('Users').doc(userId));
+        batch.set(
+          _firestore.collection('Users').doc(userId),
+          {'status': 'deleted'},
+          SetOptions(merge: true),
+        );
+
+        // 2) إرجاع مهامه النشطة متاحة لباقي المناديب
+        for (final collection in ['donations', 'requests']) {
+          final tasksSnap = await _firestore
+              .collection(collection)
+              .where('courierID', isEqualTo: userId)
+              .where('courierTaskStatus', isEqualTo: 'active')
+              .get();
+
+          for (final taskDoc in tasksSnap.docs) {
+            batch.update(taskDoc.reference, {
+              'courierID': FieldValue.delete(),
+              'courierTaskStatus': FieldValue.delete(),
+              'acceptedAt': FieldValue.delete(),
+            });
+
+            final boxesSnap = await _firestore
+                .collection('donation_boxes')
+                .where(
+                  collection == 'donations' ? 'donationId' : 'requestId',
+                  isEqualTo: taskDoc.id,
+                )
+                .get();
+
+            for (final boxDoc in boxesSnap.docs) {
+              batch.update(boxDoc.reference, {
+                'courierID': FieldValue.delete(),
+              });
+            }
+          }
+        }
       }
 
       await batch.commit();
@@ -177,7 +216,13 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                       );
                     }
 
-                    final docs = snapshot.data?.docs ?? [];
+                    // إخفاء المناديب المحذوفين
+                    final docs = (snapshot.data?.docs ?? [])
+                        .where(
+                          (d) =>
+                              _getStatus(d.data()).toLowerCase() != 'deleted',
+                        )
+                        .toList();
 
                     if (docs.isEmpty) {
                       return _buildEmptyState();
