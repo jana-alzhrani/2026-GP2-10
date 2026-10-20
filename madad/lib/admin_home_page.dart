@@ -102,7 +102,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
       // -----------------------------------------
       // عدد المناديب
       // -----------------------------------------
-      final int couriers = couriersSnapshot.docs.length;
+      final int couriers = couriersSnapshot.docs
+          .where(
+            (d) => (d.data()['statues'] ?? '').toString() != 'deleted',
+          )
+          .length;
 
       setState(() {
         adminName = fetchedAdminName;
