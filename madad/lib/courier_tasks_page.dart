@@ -31,7 +31,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
           .collection('donations')
           .doc(donationId);
       batch.update(donationRef, {
-        'courierID': widget.userId,
+        'courierId': widget.userId,
         'courierTaskStatus': 'active',
         'acceptedAt': FieldValue.serverTimestamp(),
       });
@@ -42,7 +42,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
           .get();
 
       for (var boxDoc in boxesSnapshot.docs) {
-        batch.update(boxDoc.reference, {'courierID': widget.userId});
+        batch.update(boxDoc.reference, {'courierId': widget.userId});
       }
 
       await batch.commit();
@@ -75,7 +75,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
           .collection('requests')
           .doc(requestId);
       batch.update(requestRef, {
-        'courierID': widget.userId,
+        'courierId': widget.userId,
         'courierTaskStatus': 'active',
         'acceptedAt': FieldValue.serverTimestamp(),
       });
@@ -86,7 +86,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
           .get();
 
       for (var boxDoc in boxesSnapshot.docs) {
-        batch.update(boxDoc.reference, {'courierID': widget.userId});
+        batch.update(boxDoc.reference, {'courierId': widget.userId});
       }
 
       await batch.commit();
@@ -179,7 +179,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                                 .toString()
                                 .toLowerCase();
                         final deliveryMethod = data['deliveryMethod'] ?? '';
-                        final courierId = data['courierID'];
+                        final courierId = data['courierId'];
 
                         bool isAvailable =
                             (_selectedTab == 0) &&
@@ -211,15 +211,12 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                                 .toLowerCase();
                         final deliveryMethod =
                             data['deliveryMethod'] ?? ''; // جلب طريقة التوصيل
-                        final courierId =
-                            data['courierID'] ?? data['courierId'];
+                        final courierId = data['courierId'];
 
                         bool isAvailable =
                             (_selectedTab == 0) &&
                             deliveryMethod == 'delivery' &&
-                            (status == 'requested' ||
-                                status == 'reserved' ||
-                                status.isEmpty) &&
+                            (status == 'requested' || status.isEmpty) &&
                             (courierId == null || courierId.toString().isEmpty);
 
                         bool isCompleted =
@@ -306,7 +303,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                 ? (data['boxCodes'] as List).length
                 : totalBoxes)
             .clamp(0, 999999);
-    final donorId = data['donorID'] ?? '';
+    final donorId = data['donorId'] ?? '';
 
     final String pickupLocation = status == 'reserved'
         ? 'المستودع'
