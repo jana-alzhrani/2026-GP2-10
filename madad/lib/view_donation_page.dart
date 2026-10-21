@@ -208,7 +208,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: 16,
-        vertical: trailing != null ? 10 : 14,
+        vertical: trailing != null ? 12 : 14,
       ),
       decoration: BoxDecoration(
         color: AppDesign.surface,
@@ -216,6 +216,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
         border: Border.all(color: AppDesign.border),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisSize: trailing != null ? MainAxisSize.max : MainAxisSize.min,
         textDirection: TextDirection.rtl,
         children: [
@@ -253,6 +254,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   }
 
   /// زر مسح الباركود (مربع على اليسار) لتأكيد التسليم للمستودع
+  /// مع نص صغير تحته
   Widget _scanSquareButton(String donationId) {
     return Tooltip(
       message: 'مسح الباركود لتأكيد التسليم للمستودع',
@@ -266,18 +268,38 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             ),
           );
         },
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: AppDesign.primary,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(
-            Icons.qr_code_scanner_rounded,
-            color: Colors.white,
-            size: 26,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppDesign.primary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.qr_code_scanner_rounded,
+                color: Colors.white,
+                size: 26,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: 90,
+              child: Text(
+                'امسح الباركود لتأكيد تسليم التبرع',
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppDesign.captionStyle.copyWith(
+                  fontSize: 9,
+                  height: 1.2,
+                  color: AppDesign.textSecondary,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -332,6 +354,17 @@ class _ViewDonationPageState extends State<ViewDonationPage>
         return;
       }
 
+      // حذف القطع (كولكشن items)
+      final itemsSnapshot = await FirebaseFirestore.instance
+          .collection('items')
+          .where('donationId', isEqualTo: docId)
+          .get();
+
+      for (final itemDoc in itemsSnapshot.docs) {
+        await itemDoc.reference.delete();
+      }
+
+      // حذف الصناديق
       final boxesSnapshot = await FirebaseFirestore.instance
           .collection('donation_boxes')
           .where('donationId', isEqualTo: docId)
@@ -525,6 +558,147 @@ class _ViewDonationPageState extends State<ViewDonationPage>
         s != 'draft';
   }
 
+  // ============================================================
+  // قطع الصندوق (من كولكشن items، مع دعم الطريقة القديمة)
+  // ============================================================
+
+  Widget _buildBoxItems(QueryDocumentSnapshot box) {
+    final bData = box.data() as Map<String, dynamic>;
+    final legacy = bData['items'];
+
+    // دعم الصناديق القديمة اللي القطع فيها داخل array
+    if (legacy is List && legacy.isNotEmpty) {
+      final list = legacy
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      return _itemsColumn(list);
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('items')
+          .where('boxId', isEqualTo: box.id)
+          .snapshots(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting &&
+            !snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(AppDesign.spaceMD),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snap.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(AppDesign.spaceMD),
+            child: Text('تعذر تحميل القطع', style: AppDesign.captionStyle),
+          );
+        }
+
+        final docs = [...(snap.data?.docs ?? [])];
+
+        // ترتيب محلي عشان ما نحتاج index في Firestore
+        docs.sort((a, b) {
+          final an =
+              ((a.data() as Map<String, dynamic>)['itemNumber'] ?? 0) as num;
+          final bn =
+              ((b.data() as Map<String, dynamic>)['itemNumber'] ?? 0) as num;
+          return an.compareTo(bn);
+        });
+
+        if (docs.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(AppDesign.spaceMD),
+            child: Text('لا توجد قطع', style: AppDesign.captionStyle),
+          );
+        }
+
+        return _itemsColumn(
+          docs.map((d) => d.data() as Map<String, dynamic>).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _itemsColumn(List<Map<String, dynamic>> items) {
+    return Padding(
+      padding: const EdgeInsets.all(AppDesign.spaceMD),
+      child: Column(
+        children: List.generate(items.length, (index) {
+          final item = items[index];
+
+          final String imageUrl = (item['imageUrl'] ?? '').toString();
+          final String type = (item['type'] ?? '-').toString();
+          final String size = (item['size'] ?? '').toString();
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: AppDesign.spaceSM),
+            padding: const EdgeInsets.all(AppDesign.spaceSM),
+            decoration: BoxDecoration(
+              color: AppDesign.surface,
+              borderRadius: BorderRadius.circular(AppDesign.radiusMD),
+              border: Border.all(color: AppDesign.border),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                /// 🖼️ صورة القطعة
+                imageUrl.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(AppDesign.radiusSM),
+                        child: Image.network(
+                          imageUrl,
+                          width: 55,
+                          height: 55,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 55,
+                              height: 55,
+                              color: AppDesign.surfaceAlt,
+                              child: const Icon(Icons.broken_image),
+                            );
+                          },
+                        ),
+                      )
+                    : Container(
+                        width: 55,
+                        height: 55,
+                        decoration: BoxDecoration(
+                          color: AppDesign.surfaceAlt,
+                          borderRadius: BorderRadius.circular(
+                            AppDesign.radiusSM,
+                          ),
+                        ),
+                        child: const Icon(Icons.image_not_supported),
+                      ),
+                AppGap.wMD,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "القطعة ${index + 1}",
+                        style: AppDesign.bodyStyle.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        size.isNotEmpty ? '$type - مقاس $size' : type,
+                        style: AppDesign.captionStyle,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
   Widget _buildDonationCard(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
@@ -625,6 +799,9 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             ),
           ),
 
+          // ==================================================
+          // طريقة التوصيل (للتبرعات المؤكدة فقط)
+          // ==================================================
           if (!isDraft) ...[
             const SizedBox(height: 10),
             StreamBuilder<QuerySnapshot>(
@@ -728,6 +905,11 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                 );
               },
             ),
+          ],
+
+          // الصناديق وقطعها تظهر في التبرعات النشطة فقط
+          // (المسودة تنعرض وتتعدل من صفحة التعديل)
+          if (!isDraft) ...[
             const SizedBox(height: AppDesign.spaceLG),
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -735,7 +917,28 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                   .where('donationId', isEqualTo: doc.id)
                   .snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.all(AppDesign.spaceMD),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final boxes = [...(snapshot.data?.docs ?? [])];
+
+                // ترتيب الصناديق حسب الرقم
+                boxes.sort((a, b) {
+                  final an =
+                      ((a.data() as Map<String, dynamic>)['boxNumber'] ?? 0)
+                          as num;
+                  final bn =
+                      ((b.data() as Map<String, dynamic>)['boxNumber'] ?? 0)
+                          as num;
+                  return an.compareTo(bn);
+                });
+
+                if (boxes.isEmpty) {
                   return Align(
                     alignment: Alignment.centerRight,
                     child: Text(
@@ -745,8 +948,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                     ),
                   );
                 }
-
-                final boxes = snapshot.data!.docs;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -763,18 +964,20 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                       ),
                     ),
                     ...boxes.map((box) {
-                      final data = box.data() as Map<String, dynamic>;
-                      final rawStatus = (data['status'] ?? '-').toString();
-                      final status = formatBoxStatus(rawStatus);
+                      final bData = box.data() as Map<String, dynamic>;
+                      final rawStatus = (bData['status'] ?? '-').toString();
+                      final boxStatus = formatBoxStatus(rawStatus);
                       final statusColor = getBoxStatusColor(rawStatus);
                       final statusIcon = getBoxStatusIcon(rawStatus);
-                      final boxCode = (data['boxCode'] ?? '---').toString();
-                      final items = data['items'] ?? [];
+                      final boxCode = (bData['boxCode'] ?? '').toString();
+                      final boxNumber = (bData['boxNumber'] ?? '').toString();
+
+                      final String titleText =
+                          boxCode.isEmpty ? 'صندوق $boxNumber' : boxCode;
 
                       return Container(
-                        margin: const EdgeInsets.only(
-                          bottom: AppDesign.spaceSM,
-                        ),
+                        margin:
+                            const EdgeInsets.only(bottom: AppDesign.spaceSM),
                         decoration: AppDesign.softCardDecoration,
                         child: ExpansionTile(
                           tilePadding: const EdgeInsets.symmetric(
@@ -788,14 +991,11 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                                 textDirection: TextDirection.rtl,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    statusIcon,
-                                    size: 18,
-                                    color: statusColor,
-                                  ),
+                                  Icon(statusIcon,
+                                      size: 18, color: statusColor),
                                   const SizedBox(width: 5),
                                   Text(
-                                    status,
+                                    boxStatus,
                                     style: AppDesign.captionStyle.copyWith(
                                       color: statusColor,
                                       fontWeight: FontWeight.w700,
@@ -806,7 +1006,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                               AppGap.wMD,
                               Expanded(
                                 child: Text(
-                                  boxCode,
+                                  titleText,
                                   style: AppDesign.h2Style.copyWith(
                                     color: AppDesign.primary,
                                     fontWeight: FontWeight.bold,
@@ -816,113 +1016,12 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                               ),
                             ],
                           ),
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.all(AppDesign.spaceMD),
-                              child: Column(
-                                children: List.generate(items.length, (index) {
-                                  final item = items[index];
-
-                                  return Container(
-                                    margin: const EdgeInsets.only(
-                                      bottom: AppDesign.spaceSM,
-                                    ),
-                                    padding: const EdgeInsets.all(
-                                      AppDesign.spaceSM,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppDesign.surface,
-                                      borderRadius: BorderRadius.circular(
-                                        AppDesign.radiusMD,
-                                      ),
-                                      border: Border.all(
-                                        color: AppDesign.border,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        /// 🖼️ صورة القطعة
-                                        (item['imageUrl'] != null &&
-                                                item['imageUrl']
-                                                    .toString()
-                                                    .isNotEmpty)
-                                            ? ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(
-                                                      AppDesign.radiusSM,
-                                                    ),
-                                                child: Image.network(
-                                                  item['imageUrl'],
-                                                  width: 55,
-                                                  height: 55,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) {
-                                                        return Container(
-                                                          width: 55,
-                                                          height: 55,
-                                                          color: AppDesign
-                                                              .surfaceAlt,
-                                                          child: const Icon(
-                                                            Icons.broken_image,
-                                                          ),
-                                                        );
-                                                      },
-                                                ),
-                                              )
-                                            : Container(
-                                                width: 55,
-                                                height: 55,
-                                                decoration: BoxDecoration(
-                                                  color: AppDesign.surfaceAlt,
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        AppDesign.radiusSM,
-                                                      ),
-                                                ),
-                                                child: const Icon(
-                                                  Icons.image_not_supported,
-                                                ),
-                                              ),
-                                        AppGap.wMD,
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                "القطعة ${index + 1}",
-                                                style: AppDesign.bodyStyle
-                                                    .copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                item['type'] ?? '-',
-                                                style: AppDesign.captionStyle,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }),
-                              ),
-                            ),
-                          ],
+                          children: [_buildBoxItems(box)],
                         ),
                       );
-                    }).toList(),
+                    }),
 
                     AppGap.md,
-
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
@@ -1011,7 +1110,13 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
         final filteredDocs = docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          final status = (data['status'] ?? '').toString();
+          final status = (data['status'] ?? '').toString().trim();
+
+          // تبرع بدون حالة = غير مكتمل (ما انضغط "تم")، ما يظهر في أي تبويب
+          if (status.isEmpty) return false;
+
+          // المسودات: status == draft فقط
+          // النشطة: أي حالة ثانية غير draft
           return draftsOnly ? _isDraftStatus(status) : !_isDraftStatus(status);
         }).toList();
 
@@ -1341,11 +1446,24 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
         return;
       }
 
-      // 1) الصندوق -> متاح
-      await match.reference.update({
+      // 1) الصندوق + قطعه -> متاح (دفعة وحدة)
+      final boxItemsSnap = await db
+          .collection('items')
+          .where('boxId', isEqualTo: match.id)
+          .get();
+
+      final batch = db.batch();
+
+      batch.update(match.reference, {
         'status': 'available',
         'receivedAtWarehouse': FieldValue.serverTimestamp(),
       });
+
+      for (final it in boxItemsSnap.docs) {
+        batch.update(it.reference, {'status': 'available'});
+      }
+
+      await batch.commit();
 
       // 2) إذا كل الصناديق صارت متاحة، التبرع -> متاح
       final remaining = snap.docs
