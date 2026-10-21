@@ -56,6 +56,52 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
   String? generalSize;
 
+  // ============================================================
+  // Controllers حقول وصف القطع
+  // ============================================================
+
+  final Map<String, TextEditingController> _descControllers = {};
+
+  TextEditingController _descCtrl(int box, int idx) {
+    return _descControllers.putIfAbsent(
+      '${box}_$idx',
+      () => TextEditingController(text: boxes[box]![idx]['description'] ?? ''),
+    );
+  }
+
+  // نشيل الـ controller من الخريطة ونتخلص منه بعد انتهاء الفريم
+  // (عشان ما نعمل dispose وهو لسا مربوط بـ TextField)
+  void _disposeDescController(String key) {
+    final ctrl = _descControllers.remove(key);
+    if (ctrl == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ctrl.dispose();
+    });
+  }
+
+  void _clearDescControllers(int box) {
+    final keys = _descControllers.keys
+        .where((k) => k.startsWith('${box}_'))
+        .toList();
+
+    for (final k in keys) {
+      _disposeDescController(k);
+    }
+  }
+
+  @override
+  void dispose() {
+    _itemCountController.dispose();
+
+    for (final c in _descControllers.values) {
+      c.dispose();
+    }
+    _descControllers.clear();
+
+    super.dispose();
+  }
+
   bool ageNeedsSize() {
     if (selectedAgeGroup == null) return false;
 
@@ -131,6 +177,7 @@ class _AddDonationPageState extends State<AddDonationPage> {
           'image': null,
           'type': null,
           'size': null,
+          'description': '',
           'isValid': false,
           'error': null,
         },
@@ -397,6 +444,8 @@ class _AddDonationPageState extends State<AddDonationPage> {
     Uint8List imageBytes,
     String? mimeType,
   ) async {
+    if (!mounted) return;
+
     setState(() {
       boxes[box]![index]['error'] = "جاري الفحص...";
     });
@@ -446,6 +495,8 @@ Reject if:
         }),
       );
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
@@ -481,7 +532,11 @@ Reject if:
 
             boxes[box]![index]['size'] = null;
 
+            boxes[box]![index]['description'] = '';
+
             boxes[box]![index]['error'] = null;
+
+            _disposeDescController('${box}_$index');
 
             AppDesign.showImageInvalidSnackBar(context, "الصورة غير صالحة!");
           }
@@ -492,6 +547,8 @@ Reject if:
         });
       }
     } catch (e) {
+      if (!mounted) return;
+
       setState(() {
         boxes[box]![index]['error'] = "فشل الفحص: $e";
       });
@@ -525,7 +582,7 @@ Reject if:
   }
 
   // ============================================================
-  // التحقق من الصندوق
+  // التحقق من الصندوق (الوصف إجباري)
   // ============================================================
 
   bool validateBoxBeforeSave(int box) {
@@ -547,13 +604,19 @@ Reject if:
       if (item['type'] == "حذاء" && item['size'] == null) {
         return false;
       }
+
+      final desc = (item['description'] ?? '').toString().trim();
+
+      if (desc.isEmpty) {
+        return false;
+      }
     }
 
     return true;
   }
 
   // ============================================================
-  // حفظ الصندوق
+  // حفظ الصندوق (كل قطعة دوكمنت في كولكشن items)
   // ============================================================
 
   Future<void> _submitBox(int box) async {
@@ -578,30 +641,25 @@ Reject if:
 
       await createDonationIfNeeded();
 
-      List<Map<String, dynamic>> uploadedItems = [];
-
       final items = boxes[box]!;
 
+      // 1) رفع الصور أولاً
+      final List<Map<String, String>> uploads = [];
+
       for (int i = 0; i < items.length; i++) {
-        final item = items[i];
+        final filePath = 'donations/$donationId/boxes/box_$box/item_$i.jpg';
 
-        final filePath =
-            'donations/$donationId/'
-            'boxes/box_$box/item_$i.jpg';
+        final Uint8List imageBytes = items[i]['image'];
 
-        final Uint8List imageBytes = item['image'];
-
-        final uploaded = await uploadImage(imageBytes, filePath);
-
-        uploadedItems.add({
-          'type': item['type'],
-          'size': item['type'] == "حذاء" ? item['size'] : null,
-          'imageUrl': uploaded['url'],
-          'imagePath': uploaded['path'],
-        });
+        uploads.add(await uploadImage(imageBytes, filePath));
       }
 
-      await firestore.collection('donation_boxes').add({
+      // 2) كتابة الصندوق + القطع دفعة وحدة (يا الكل يتحفظ يا ولا شي)
+      final batch = firestore.batch();
+
+      final boxRef = firestore.collection('donation_boxes').doc();
+
+      batch.set(boxRef, {
         'donationId': donationId,
         'donorId': user.uid,
         'boxNumber': box,
@@ -609,20 +667,33 @@ Reject if:
         'ageGroup': selectedAgeGroup,
         'generalSize': generalSize,
         'status': 'draft',
-        'items': uploadedItems,
+        'itemsCount': items.length,
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      print("DONATION ID: $donationId");
+      for (int i = 0; i < items.length; i++) {
+        final itemRef = firestore.collection('items').doc();
 
-      print("BOX: $box");
+        batch.set(itemRef, {
+          'boxId': boxRef.id, // ربط بالصندوق
+          'donationId': donationId, // ربط بالتبرع
+          'donorId': user.uid,
+          'boxNumber': box,
+          'itemNumber': i + 1,
+          'type': items[i]['type'],
+          'size': items[i]['type'] == "حذاء" ? items[i]['size'] : null,
+          'description': items[i]['description'].toString().trim(),
+          'imageUrl': uploads[i]['url'],
+          'imagePath': uploads[i]['path'],
+            'status': 'draft',   
 
-      print("ITEMS: ${items.length}");
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
 
-      print(
-        "IMAGE NULL?: "
-        "${items[0]['image'] == null}",
-      );
+      await batch.commit();
+
+      if (!mounted) return;
 
       setState(() {
         boxes[box] = List.generate(
@@ -631,16 +702,21 @@ Reject if:
             'image': null,
             'type': null,
             'size': null,
+            'description': '',
             'isValid': false,
             'error': null,
           },
         );
+
+        _clearDescControllers(box);
 
         savedBoxes.add(box);
 
         openedBox = null;
       });
     } catch (e) {
+      if (!mounted) return;
+
       AppDesign.showErrorSnackBar(context, "فشل الحفظ: $e");
     }
   }
@@ -669,6 +745,17 @@ Reject if:
     final user = FirebaseAuth.instance.currentUser;
 
     if (donationId != null) {
+      // حذف القطع
+      final itemsSnap = await FirebaseFirestore.instance
+          .collection('items')
+          .where('donationId', isEqualTo: donationId)
+          .get();
+
+      for (var doc in itemsSnap.docs) {
+        await doc.reference.delete();
+      }
+
+      // حذف الصناديق
       final boxesSnap = await FirebaseFirestore.instance
           .collection('donation_boxes')
           .where('donationId', isEqualTo: donationId)
@@ -678,6 +765,7 @@ Reject if:
         await doc.reference.delete();
       }
 
+      // حذف التبرع
       await FirebaseFirestore.instance
           .collection('donations')
           .doc(donationId)
@@ -1082,9 +1170,36 @@ Reject if:
                                 ],
                               ),
 
+                              // ==================================================
+                              // وصف القطعة (يظهر بعد تحميل الصورة)
+                              // ==================================================
+                              if (item['image'] != null) ...[
+                                AppGap.sm,
+
+                                TextField(
+                                  controller: _descCtrl(openedBox!, idx),
+                                  maxLines: 2,
+                                  maxLength: 200,
+                                  onChanged: (v) {
+                                    setState(() {
+                                      boxes[openedBox!]![idx]['description'] =
+                                          v;
+                                    });
+                                  },
+                                  decoration: InputDecoration(
+                                    labelText: "وصف القطعة",
+                                    hintText:
+                                        "مثال: لون، حالة القطعة، الماركة...",
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ],
+
                               if (item['error'] != null)
                                 Text(
-                                  item?['error'],
+                                  item['error'],
                                   style: AppDesign.captionStyle.copyWith(
                                     color: AppDesign.error,
                                   ),
@@ -1098,12 +1213,14 @@ Reject if:
                     AppGap.lg,
 
                     // ==================================================
-                    // حفظ الصندوق
+                    // حفظ الصندوق (معطّل لين تكتمل كل البيانات)
                     // ==================================================
                     ElevatedButton(
-                      onPressed: () async {
-                        await _submitBox(openedBox!);
-                      },
+                      onPressed: validateBoxBeforeSave(openedBox!)
+                          ? () async {
+                              await _submitBox(openedBox!);
+                            }
+                          : null,
                       child: const Text("حفظ الصندوق"),
                     ),
                   ],
@@ -1146,7 +1263,7 @@ Reject if:
                             context,
                             '/donorHome',
                             (route) => false,
-                            arguments: user?.uid ?? '',
+                            arguments: user.uid,
                           );
                         } catch (e) {
                           AppDesign.showErrorSnackBar(
