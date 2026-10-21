@@ -43,6 +43,7 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
   final TextEditingController _itemCountController = TextEditingController();
 
+  // ضع مفتاحك هنا (الأفضل نقل الاستدعاء إلى Cloud Function)
   final String _apiKey = '';
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
@@ -52,6 +53,9 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
   Map<int, List<Map<String, dynamic>>> boxes = {};
   Set<int> savedBoxes = {};
+
+  // مسارات الصور المحفوظة حالياً في Storage (عشان نحذف القديمة بعد الحفظ)
+  Set<String> _originalImagePaths = {};
 
   final List<Map<String, dynamic>> ageGroups = [
     {'label': 'رضّع (0-2)', 'min': 0, 'max': 2},
@@ -72,6 +76,40 @@ class _EditDonationPageState extends State<EditDonationPage> {
     "bag": "حقيبة",
     "hat": "قبعة",
   };
+
+  // ============================================================
+  // Controllers حقول وصف القطع
+  // ============================================================
+
+  final Map<String, TextEditingController> _descControllers = {};
+
+  TextEditingController _descCtrl(int box, int idx) {
+    return _descControllers.putIfAbsent(
+      '${box}_$idx',
+      () => TextEditingController(
+        text: (boxes[box]?[idx]['description'] ?? '').toString(),
+      ),
+    );
+  }
+
+  // نتخلص من الـ controller بعد انتهاء الفريم (عشان ما نعمل dispose
+  // وهو لسا مربوط بـ TextField)
+  void _disposeDescController(String key) {
+    final ctrl = _descControllers.remove(key);
+    if (ctrl == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ctrl.dispose();
+    });
+  }
+
+  void _clearAllDescControllers() {
+    for (final k in _descControllers.keys.toList()) {
+      _disposeDescController(k);
+    }
+  }
+
+  // ============================================================
 
   Map<String, dynamic>? _findAgeGroupByLabel(String? label) {
     if (label == null || label.trim().isEmpty) return null;
@@ -101,14 +139,20 @@ class _EditDonationPageState extends State<EditDonationPage> {
     return true;
   }
 
-  Future<String> uploadImage(Uint8List bytes) async {
-    final ref = FirebaseStorage.instance.ref().child(
-      'donation_images/${DateTime.now().millisecondsSinceEpoch}.jpg',
-    );
+  // هل القطعة لها صورة (جديدة أو محفوظة)؟
+  bool _hasImage(Map<String, dynamic> item) {
+    if (item['image'] != null) return true;
+    return (item['imageUrl'] ?? '').toString().isNotEmpty;
+  }
+
+  Future<Map<String, String>> uploadImage(Uint8List bytes, String path) async {
+    final ref = FirebaseStorage.instance.ref().child(path);
 
     await ref.putData(bytes);
 
-    return await ref.getDownloadURL();
+    final url = await ref.getDownloadURL();
+
+    return {'url': url, 'path': ref.fullPath};
   }
 
   @override
@@ -128,7 +172,11 @@ class _EditDonationPageState extends State<EditDonationPage> {
         widget.initialBoxes!.map(
           (key, value) => MapEntry(
             key,
-            value.map((item) => Map<String, dynamic>.from(item)).toList(),
+            value.map((item) {
+              final m = Map<String, dynamic>.from(item);
+              m['description'] = (m['description'] ?? '').toString();
+              return m;
+            }).toList(),
           ),
         ),
       );
@@ -141,53 +189,101 @@ class _EditDonationPageState extends State<EditDonationPage> {
     }
   }
 
+  Future<Uint8List?> _downloadImage(String? url) async {
+    if (url == null || url.isEmpty) return null;
+
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+    } catch (e) {
+      debugPrint('Image load error: $e');
+    }
+
+    return null;
+  }
+
+  // ============================================================
+  // تحميل الصناديق + القطع (من كولكشن items)
+  // ============================================================
+
   Future<void> _loadDonationBoxes() async {
     try {
-      final snapshot = await firestore
+      final boxesSnap = await firestore
           .collection('donation_boxes')
           .where('donationId', isEqualTo: widget.donationId)
           .get();
 
+      final itemsSnap = await firestore
+          .collection('items')
+          .where('donationId', isEqualTo: widget.donationId)
+          .get();
+
+      // نجمع القطع حسب الصندوق
+      final Map<String, List<Map<String, dynamic>>> itemsByBox = {};
+
+      for (final d in itemsSnap.docs) {
+        final data = d.data();
+        final boxId = (data['boxId'] ?? '').toString();
+
+        itemsByBox.putIfAbsent(boxId, () => []).add(data);
+      }
+
       final Map<int, List<Map<String, dynamic>>> loadedBoxes = {};
+      final Set<String> loadedPaths = {};
       String? loadedGeneralSize;
 
-      for (final doc in snapshot.docs) {
+      for (final doc in boxesSnap.docs) {
         final data = doc.data();
 
         final int boxNumber = (data['boxNumber'] ?? 0) as int;
-        final List<dynamic> items = data['items'] ?? [];
 
-        if (items.isEmpty) continue;
+        // القطع من كولكشن items، ولو الصندوق قديم نقرأ من الـ array
+        List<Map<String, dynamic>> rawItems = [...(itemsByBox[doc.id] ?? [])];
 
-        if (data['generalSize'] != null) {
-          loadedGeneralSize = data['generalSize'];
+        rawItems.sort((a, b) {
+          final an = (a['itemNumber'] ?? 0) as num;
+          final bn = (b['itemNumber'] ?? 0) as num;
+          return an.compareTo(bn);
+        });
+
+        if (rawItems.isEmpty && data['items'] is List) {
+          rawItems = (data['items'] as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
         }
+
+        if (rawItems.isEmpty) continue;
+
+        final gs = (data['generalSize'] ?? '').toString();
+        if (gs.isNotEmpty) {
+          loadedGeneralSize = gs;
+        }
+
+        // تحميل الصور بالتوازي
+        final images = await Future.wait(
+          rawItems.map((m) => _downloadImage(m['imageUrl']?.toString())),
+        );
 
         loadedBoxes[boxNumber] = [];
 
-        for (final item in items) {
-          final map = Map<String, dynamic>.from(item);
+        for (int i = 0; i < rawItems.length; i++) {
+          final map = rawItems[i];
+          final imageUrl = (map['imageUrl'] ?? '').toString();
+          final imagePath = (map['imagePath'] ?? '').toString();
 
-          Uint8List? imageBytes;
+          if (imagePath.isNotEmpty) loadedPaths.add(imagePath);
 
-          if (map['imageUrl'] != null &&
-              map['imageUrl'].toString().isNotEmpty) {
-            try {
-              final response = await http.get(Uri.parse(map['imageUrl']));
-
-              if (response.statusCode == 200) {
-                imageBytes = response.bodyBytes;
-              }
-            } catch (e) {
-              debugPrint('Image load error: $e');
-            }
-          }
           loadedBoxes[boxNumber]!.add({
-            'image': imageBytes,
-            'imageUrl': map['imageUrl'],
+            'image': images[i],
+            'imageUrl': imageUrl.isEmpty ? null : imageUrl,
+            'imagePath': imagePath,
             'type': map['type'],
             'size': map['size'],
-            'isValid': imageBytes != null,
+            'description': (map['description'] ?? '').toString(),
+            'isValid': imageUrl.isNotEmpty || images[i] != null,
             'error': null,
           });
         }
@@ -210,6 +306,8 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
           savedBoxes = loadedBoxes.keys.toSet();
         }
+
+        _originalImagePaths = loadedPaths;
 
         if (loadedGeneralSize != null) {
           generalSize = loadedGeneralSize;
@@ -234,9 +332,10 @@ class _EditDonationPageState extends State<EditDonationPage> {
     return {
       'image': null,
       'imageUrl': null,
-
+      'imagePath': '',
       'type': null,
       'size': null,
+      'description': '',
       'isValid': false,
       'error': null,
     };
@@ -249,6 +348,8 @@ class _EditDonationPageState extends State<EditDonationPage> {
     });
 
     if (value.isEmpty) {
+      _clearAllDescControllers();
+
       setState(() {
         totalItems = 0;
         totalBoxes = 0;
@@ -269,6 +370,8 @@ class _EditDonationPageState extends State<EditDonationPage> {
     }
 
     if (parsed > 100) {
+      _clearAllDescControllers();
+
       setState(() {
         itemCountError = "الحد الأقصى 100 قطعة";
         totalItems = 0;
@@ -316,6 +419,9 @@ class _EditDonationPageState extends State<EditDonationPage> {
       remainingItems -= itemsInThisBox;
     }
 
+    // الـ controllers ترجع تنبني من القيم الموجودة في boxes
+    _clearAllDescControllers();
+
     setState(() {
       totalItems = newTotalItems;
       totalBoxes = newTotalBoxes;
@@ -361,7 +467,10 @@ class _EditDonationPageState extends State<EditDonationPage> {
                     alignment: Alignment.centerRight,
                     child: Text(
                       "اختار طريقة إضافة صورة القطعة",
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -377,14 +486,16 @@ class _EditDonationPageState extends State<EditDonationPage> {
                     icon: Icons.camera_alt_outlined,
                     title: "التقاط صورة",
                     subtitle: "استخدم كاميرا الجوال لتصوير القطعة",
-                    onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+                    onTap: () =>
+                        Navigator.pop(sheetContext, ImageSource.camera),
                   ),
                   AppGap.sm,
                   _buildImageSourceOption(
                     icon: Icons.photo_library_outlined,
                     title: "اختيار من المعرض",
                     subtitle: "اختار صورة موجودة في جهازك",
-                    onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+                    onTap: () =>
+                        Navigator.pop(sheetContext, ImageSource.gallery),
                   ),
                   AppGap.md,
                   SizedBox(
@@ -400,7 +511,10 @@ class _EditDonationPageState extends State<EditDonationPage> {
                       ),
                       child: const Text(
                         "إلغاء",
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -448,18 +562,17 @@ class _EditDonationPageState extends State<EditDonationPage> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 5),
                   Text(subtitle, style: AppDesign.captionStyle),
                 ],
               ),
             ),
-            Icon(
-              Icons.arrow_back_ios_new,
-              size: 17,
-              color: AppDesign.primary,
-            ),
+            Icon(Icons.arrow_back_ios_new, size: 17, color: AppDesign.primary),
           ],
         ),
       ),
@@ -492,10 +605,13 @@ class _EditDonationPageState extends State<EditDonationPage> {
         // نلغي رابط الصورة القديمة فقط بعد اختيار صورة جديدة بالفعل.
         boxes[box]![index]['image'] = bytes;
         boxes[box]![index]['imageUrl'] = null;
+        boxes[box]![index]['imagePath'] = '';
         boxes[box]![index]['isValid'] = false;
         boxes[box]![index]['error'] = null;
         boxes[box]![index]['type'] = null;
         boxes[box]![index]['size'] = null;
+        boxes[box]![index]['description'] = '';
+        _disposeDescController('${box}_$index');
         savedBoxes.remove(box);
         changesSaved = false;
       });
@@ -514,6 +630,8 @@ class _EditDonationPageState extends State<EditDonationPage> {
     Uint8List imageBytes,
     String? mimeType,
   ) async {
+    if (!mounted) return;
+
     setState(() {
       boxes[box]![index]['error'] = "جاري الفحص...";
     });
@@ -562,6 +680,8 @@ Reject if:
         }),
       );
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final String result =
@@ -591,8 +711,11 @@ Reject if:
             boxes[box]![index]['image'] = null;
             boxes[box]![index]['type'] = null;
             boxes[box]![index]['size'] = null;
+            boxes[box]![index]['description'] = '';
             boxes[box]![index]['isValid'] = false;
             boxes[box]![index]['error'] = null;
+
+            _disposeDescController('${box}_$index');
 
             AppDesign.showImageInvalidSnackBar(context, "الصورة غير صالحة!");
           }
@@ -603,10 +726,28 @@ Reject if:
         });
       }
     } catch (e) {
+      if (!mounted) return;
+
       setState(() {
         boxes[box]![index]['error'] = "فشل الفحص: $e";
       });
     }
+  }
+
+  // ============================================================
+  // التحقق (الوصف إجباري)
+  // ============================================================
+
+  bool _isItemComplete(Map<String, dynamic> item) {
+    if (!_hasImage(item)) return false;
+    if (item['type'] == null) return false;
+    if (item['isValid'] != true) return false;
+    if (item['type'] == "حذاء" && item['size'] == null) return false;
+
+    final desc = (item['description'] ?? '').toString().trim();
+    if (desc.isEmpty) return false;
+
+    return true;
   }
 
   bool _isAllDataComplete() {
@@ -618,12 +759,7 @@ Reject if:
 
     for (final boxItems in boxes.values) {
       for (final item in boxItems) {
-        if (item['image'] == null ||
-            item['type'] == null ||
-            item['isValid'] != true ||
-            (item['type'] == "حذاء" && item['size'] == null)) {
-          return false;
-        }
+        if (!_isItemComplete(item)) return false;
       }
     }
 
@@ -634,10 +770,7 @@ Reject if:
     final items = boxes[box] ?? [];
 
     for (final item in items) {
-      if (item['image'] == null) return false;
-      if (item['type'] == null) return false;
-      if (item['isValid'] != true) return false;
-      if (item['type'] == "حذاء" && item['size'] == null) return false;
+      if (!_isItemComplete(item)) return false;
     }
 
     return true;
@@ -668,6 +801,11 @@ Reject if:
     });
   }
 
+  // ============================================================
+  // حفظ التغييرات
+  // الصناديق في donation_boxes والقطع في items (كل قطعة دوكمنت)
+  // ============================================================
+
   Future<void> _saveChanges() async {
     if (!_isAllDataComplete()) {
       AppDesign.showErrorSnackBar(
@@ -685,12 +823,59 @@ Reject if:
 
     if (!confirm) return;
 
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      AppDesign.showErrorSnackBar(context, 'يجب تسجيل الدخول أولاً');
+      return;
+    }
+
     setState(() => isSaving = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      // 1) رفع الصور الجديدة (القديمة نحتفظ برابطها ومسارها)
+      final int stamp = DateTime.now().millisecondsSinceEpoch;
+      final Map<int, List<Map<String, String>>> uploaded = {};
+      final Set<String> newPaths = {};
 
-      await firestore.collection('donations').doc(widget.donationId).update({
+      for (final entry in boxes.entries) {
+        final int boxNumber = entry.key;
+        final items = entry.value;
+
+        uploaded[boxNumber] = [];
+
+        for (int i = 0; i < items.length; i++) {
+          final e = items[i];
+
+          final String existingUrl = (e['imageUrl'] ?? '').toString();
+
+          if (existingUrl.isNotEmpty) {
+            uploaded[boxNumber]!.add({
+              'url': existingUrl,
+              'path': (e['imagePath'] ?? '').toString(),
+            });
+          } else {
+            final path =
+                'donations/${widget.donationId}/boxes/box_$boxNumber/item_${i}_$stamp.jpg';
+
+            final up = await uploadImage(e['image'] as Uint8List, path);
+
+            uploaded[boxNumber]!.add(up);
+          }
+
+          final p = uploaded[boxNumber]!.last['path'] ?? '';
+          if (p.isNotEmpty) newPaths.add(p);
+        }
+      }
+
+      // 2) كل شي في batch واحد: حذف القديم + كتابة الجديد
+      final batch = firestore.batch();
+
+      final donationRef = firestore
+          .collection('donations')
+          .doc(widget.donationId);
+
+      batch.update(donationRef, {
         'gender': selectedGender,
         'ageGroup': selectedAgeGroup!['label'],
         'numberOfItems': totalItems,
@@ -699,41 +884,33 @@ Reject if:
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      final oldItems = await firestore
+          .collection('items')
+          .where('donationId', isEqualTo: widget.donationId)
+          .get();
+
+      for (final d in oldItems.docs) {
+        batch.delete(d.reference);
+      }
+
       final oldBoxes = await firestore
           .collection('donation_boxes')
           .where('donationId', isEqualTo: widget.donationId)
           .get();
 
-      for (final doc in oldBoxes.docs) {
-        await doc.reference.delete();
+      for (final d in oldBoxes.docs) {
+        batch.delete(d.reference);
       }
 
       for (final entry in boxes.entries) {
         final int boxNumber = entry.key;
-        final List<Map<String, dynamic>> items = entry.value;
+        final items = entry.value;
 
-        final uploadedItems = [];
+        final boxRef = firestore.collection('donation_boxes').doc();
 
-        for (final e in items) {
-          String imageUrl = '';
-
-          if (e['image'] != null) {
-            if (e['imageUrl'] != null && e['imageUrl'].toString().isNotEmpty) {
-              imageUrl = e['imageUrl'];
-            } else {
-              imageUrl = await uploadImage(e['image']);
-            }
-          }
-          uploadedItems.add({
-            'type': e['type'],
-            'size': e['type'] == "حذاء" ? e['size'] : null,
-            'imageUrl': imageUrl,
-          });
-        }
-
-        await firestore.collection('donation_boxes').add({
+        batch.set(boxRef, {
           'donationId': widget.donationId,
-          'userId': user?.uid,
+          'donorId': user.uid,
           'boxNumber': boxNumber,
           'gender': selectedGender,
           'ageGroup': {
@@ -743,10 +920,53 @@ Reject if:
           },
           'generalSize': generalSize ?? "",
           'status': 'draft',
-          'items': uploadedItems,
+          'itemsCount': items.length,
           'timestamp': FieldValue.serverTimestamp(),
         });
+
+        for (int i = 0; i < items.length; i++) {
+          final e = items[i];
+          final itemRef = firestore.collection('items').doc();
+
+          batch.set(itemRef, {
+            'boxId': boxRef.id, // ربط بالصندوق
+            'donationId': widget.donationId, // ربط بالتبرع
+            'donorId': user.uid,
+            'boxNumber': boxNumber,
+            'itemNumber': i + 1,
+            'type': e['type'],
+            'size': e['type'] == "حذاء" ? e['size'] : null,
+            'description': (e['description'] ?? '').toString().trim(),
+            'imageUrl': uploaded[boxNumber]![i]['url'],
+            'imagePath': uploaded[boxNumber]![i]['path'],
+            'status': 'draft',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
       }
+
+      await batch.commit();
+
+      // 3) نحدّث الحالة المحلية عشان أي حفظ ثاني يعيد استخدام الصور
+      for (final entry in boxes.entries) {
+        for (int i = 0; i < entry.value.length; i++) {
+          entry.value[i]['imageUrl'] = uploaded[entry.key]![i]['url'];
+          entry.value[i]['imagePath'] = uploaded[entry.key]![i]['path'];
+        }
+      }
+
+      // 4) نحذف من Storage الصور اللي ما عادت مستخدمة
+      final unused = _originalImagePaths.difference(newPaths);
+
+      for (final p in unused) {
+        try {
+          await FirebaseStorage.instance.ref().child(p).delete();
+        } catch (e) {
+          debugPrint('Storage cleanup error: $e');
+        }
+      }
+
+      _originalImagePaths = newPaths;
 
       if (!mounted) return;
 
@@ -1042,6 +1262,35 @@ Reject if:
                 ),
               ],
             ),
+
+            // ==================================================
+            // وصف القطعة (يظهر بعد وجود صورة، وإجباري)
+            // ==================================================
+            if (_hasImage(item)) ...[
+              AppGap.sm,
+              TextField(
+                controller: _descCtrl(openedBox!, idx),
+                maxLines: 2,
+                maxLength: 200,
+                onChanged: (v) {
+                  setState(() {
+                    boxes[openedBox]![idx]['description'] = v;
+                    savedBoxes.remove(openedBox);
+                    changesSaved = false;
+                  });
+                },
+                decoration: InputDecoration(
+                  labelText: "وصف القطعة",
+                  hintText: "مثال: لون، حالة القطعة، الماركة...",
+                  filled: true,
+                  fillColor: AppDesign.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+
             if (item['error'] != null) ...[
               AppGap.sm,
               Text(
@@ -1091,6 +1340,12 @@ Reject if:
   @override
   void dispose() {
     _itemCountController.dispose();
+
+    for (final c in _descControllers.values) {
+      c.dispose();
+    }
+    _descControllers.clear();
+
     super.dispose();
   }
 
@@ -1284,7 +1539,10 @@ Reject if:
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _markCurrentBoxDone,
+                              // معطّل لين تكتمل كل بيانات الصندوق
+                              onPressed: _validateOpenedBox(openedBox!)
+                                  ? _markCurrentBoxDone
+                                  : null,
                               child: const Text("حفظ الصندوق"),
                             ),
                           ),
