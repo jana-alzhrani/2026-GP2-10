@@ -5,12 +5,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'app_design.dart';
 
 class DonorDeliveryPage extends StatefulWidget {
-    final String donationId;
+  final String donationId;
 
-  const DonorDeliveryPage({
-    super.key,
-    required this.donationId,
-  });
+  const DonorDeliveryPage({super.key, required this.donationId});
 
   @override
   State<DonorDeliveryPage> createState() => _DonorDeliveryPageState();
@@ -18,8 +15,7 @@ class DonorDeliveryPage extends StatefulWidget {
 
 class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController _shortAddressController =
-      TextEditingController();
+  final TextEditingController _shortAddressController = TextEditingController();
 
   String? selectedMethod;
   String? selectedCity;
@@ -65,10 +61,7 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
   void _showMessage(String message) {
     if (!mounted) return;
 
-    AppDesign.showErrorSnackBar(
-      context,
-      message,
-    );
+    AppDesign.showErrorSnackBar(context, message);
   }
 
   String? _validateShortAddress(String? value) {
@@ -90,10 +83,7 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
       'https://www.google.com/maps/search/?api=1&query=$warehouseLat,$warehouseLng',
     );
 
-    final opened = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!opened) {
       _showMessage('تعذر فتح خرائط Google');
@@ -227,7 +217,8 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
                   left: AppDesign.screenPadding,
                   right: AppDesign.screenPadding,
                   top: AppDesign.screenPadding,
-                  bottom: MediaQuery.of(context).viewInsets.bottom +
+                  bottom:
+                      MediaQuery.of(context).viewInsets.bottom +
                       AppDesign.screenPadding,
                 ),
                 child: SizedBox(
@@ -269,10 +260,11 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
                             filteredDistricts = query.isEmpty
                                 ? List.from(riyadhDistricts)
                                 : riyadhDistricts
-                                    .where(
-                                      (district) => district.startsWith(query),
-                                    )
-                                    .toList();
+                                      .where(
+                                        (district) =>
+                                            district.startsWith(query),
+                                      )
+                                      .toList();
                           });
                         },
                       ),
@@ -331,6 +323,11 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
     }
   }
 
+  // ============================================================
+  // تأكيد طريقة التوصيل
+  // التبرع + الصناديق + القطع كلها تتحول إلى published في batch واحد
+  // ============================================================
+
   Future<void> _saveMethod() async {
     if (selectedMethod == null) {
       _showMessage('اختر طريقة التوصيل أولاً');
@@ -352,31 +349,39 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
     try {
       setState(() => saving = true);
 
-      final donationRef = FirebaseFirestore.instance
-          .collection('donations')
-          .doc(widget.donationId);
+      final db = FirebaseFirestore.instance;
 
-      /// 🔥 1. تحديث التبرع
-      await donationRef.update({
+      final donationRef = db.collection('donations').doc(widget.donationId);
+
+      /// 1. جلب الصناديق والقطع
+      final boxesSnapshot = await db
+          .collection('donation_boxes')
+          .where('donationId', isEqualTo: widget.donationId)
+          .get();
+
+      final itemsSnapshot = await db
+          .collection('items')
+          .where('donationId', isEqualTo: widget.donationId)
+          .get();
+
+      final batch = db.batch();
+
+      /// 2. تحديث التبرع
+      batch.update(donationRef, {
         'status': 'published',
         'deliveryMethod': selectedMethod,
         if (selectedMethod == 'pickup')
           'pickupAddress': {
             'city': selectedCity,
             'district': selectedDistrict,
-            'shortNationalAddress':
-                _shortAddressController.text.trim().toUpperCase(),
+            'shortNationalAddress': _shortAddressController.text
+                .trim()
+                .toUpperCase(),
           },
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      /// 🔥 2. جلب الصناديق
-      final boxesSnapshot = await FirebaseFirestore.instance
-          .collection('donation_boxes')
-          .where('donationId', isEqualTo: widget.donationId)
-          .get();
-
-      /// 🔥 3. تحديث الصناديق + توليد boxCode
+      /// 3. تحديث الصناديق + توليد boxCode
       for (final boxDoc in boxesSnapshot.docs) {
         final data = boxDoc.data();
         final boxNumber = data['boxNumber'] ?? 0;
@@ -384,20 +389,26 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
         final shortId = boxDoc.id.substring(0, 5).toUpperCase();
         final boxCode = "BOX$boxNumber-$shortId";
 
-        await boxDoc.reference.update({
+        batch.update(boxDoc.reference, {
           'status': 'published',
           'boxCode': boxCode,
         });
       }
 
+      /// 4. تحديث القطع
+      for (final itemDoc in itemsSnapshot.docs) {
+        batch.update(itemDoc.reference, {'status': 'published'});
+      }
+
+      await batch.commit();
+
       if (!mounted) return;
 
-      AppDesign.showSuccessSnackBar(
-        context,
-        'تم تأكيد التبرع بنجاح',
-      );
+      AppDesign.showSuccessSnackBar(context, 'تم تأكيد التبرع بنجاح');
 
       await Future.delayed(const Duration(milliseconds: 800));
+
+      if (!mounted) return;
 
       Navigator.pushNamedAndRemoveUntil(
         context,
@@ -427,8 +438,9 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(AppDesign.cardPadding),
         decoration: BoxDecoration(
-          color:
-              selected ? AppDesign.primary.withOpacity(0.08) : AppDesign.white,
+          color: selected
+              ? AppDesign.primary.withOpacity(0.08)
+              : AppDesign.white,
           borderRadius: BorderRadius.circular(AppDesign.radiusLG),
           border: Border.all(
             color: selected ? AppDesign.primary : AppDesign.border,
@@ -516,8 +528,9 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
                       color: value == null
                           ? AppDesign.textSecondary
                           : AppDesign.textPrimary,
-                      fontWeight:
-                          value == null ? FontWeight.w400 : FontWeight.w700,
+                      fontWeight: value == null
+                          ? FontWeight.w400
+                          : FontWeight.w700,
                     ),
                   ),
                 ],
@@ -586,11 +599,13 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
               onChanged: (value) {
                 final upper = value.toUpperCase();
                 if (value != upper) {
-                  _shortAddressController.value =
-                      _shortAddressController.value.copyWith(
-                    text: upper,
-                    selection: TextSelection.collapsed(offset: upper.length),
-                  );
+                  _shortAddressController.value = _shortAddressController.value
+                      .copyWith(
+                        text: upper,
+                        selection: TextSelection.collapsed(
+                          offset: upper.length,
+                        ),
+                      );
                 }
               },
             ),
@@ -820,8 +835,7 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
                         'يمكنك إيصال التبرع بنفسك إلى المستودع خلال ساعات العمل.',
                     icon: Icons.storefront_outlined,
                   ),
-                  if (selectedMethod == 'self_delivery')
-                    _selfDeliverySection(),
+                  if (selectedMethod == 'self_delivery') _selfDeliverySection(),
                   AppGap.xl,
                   SizedBox(
                     width: double.infinity,
