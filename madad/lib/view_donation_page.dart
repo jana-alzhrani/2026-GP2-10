@@ -73,15 +73,15 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   Color _statusBackground(String status) {
     switch (status.toLowerCase()) {
       case 'draft':
-        return AppDesign.warning.withOpacity(0.35);
+        return AppDesign.warning.withValues(alpha: 0.35);
       case 'published':
-        return AppDesign.softGreen.withOpacity(0.20);
+        return AppDesign.softGreen.withValues(alpha: 0.20);
       case 'available':
-        return AppDesign.secondary.withOpacity(0.18);
+        return AppDesign.secondary.withValues(alpha: 0.18);
       case 'reserved':
-        return AppDesign.warning.withOpacity(0.35);
+        return AppDesign.warning.withValues(alpha: 0.35);
       case 'delivered':
-        return AppDesign.softGreen.withOpacity(0.20);
+        return AppDesign.softGreen.withValues(alpha: 0.20);
       default:
         return AppDesign.surfaceAlt;
     }
@@ -580,8 +580,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
           .where('boxId', isEqualTo: box.id)
           .snapshots(),
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting &&
-            !snap.hasData) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Padding(
             padding: EdgeInsets.all(AppDesign.spaceMD),
             child: Center(child: CircularProgressIndicator()),
@@ -972,12 +971,13 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                       final boxCode = (bData['boxCode'] ?? '').toString();
                       final boxNumber = (bData['boxNumber'] ?? '').toString();
 
-                      final String titleText =
-                          boxCode.isEmpty ? 'صندوق $boxNumber' : boxCode;
-
+                      final String titleText = boxCode.isEmpty
+                          ? 'صندوق $boxNumber'
+                          : boxCode;
                       return Container(
-                        margin:
-                            const EdgeInsets.only(bottom: AppDesign.spaceSM),
+                        margin: const EdgeInsets.only(
+                          bottom: AppDesign.spaceSM,
+                        ),
                         decoration: AppDesign.softCardDecoration,
                         child: ExpansionTile(
                           tilePadding: const EdgeInsets.symmetric(
@@ -991,8 +991,11 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                                 textDirection: TextDirection.rtl,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(statusIcon,
-                                      size: 18, color: statusColor),
+                                  Icon(
+                                    statusIcon,
+                                    size: 18,
+                                    color: statusColor,
+                                  ),
                                   const SizedBox(width: 5),
                                   Text(
                                     boxStatus,
@@ -1005,13 +1008,23 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                               ),
                               AppGap.wMD,
                               Expanded(
-                                child: Text(
-                                  titleText,
-                                  style: AppDesign.h2Style.copyWith(
-                                    color: AppDesign.primary,
-                                    fontWeight: FontWeight.bold,
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      titleText,
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.visible,
+                                      textDirection: TextDirection.ltr,
+                                      style: AppDesign.h2Style.copyWith(
+                                        color: AppDesign.primary,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
-                                  textAlign: TextAlign.right,
                                 ),
                               ),
                             ],
