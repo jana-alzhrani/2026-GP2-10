@@ -43,7 +43,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   }
 
   String _formatStatus(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.trim().toLowerCase()) {
       case 'draft':
         return 'مسودة';
       case 'published':
@@ -53,7 +53,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       case 'reserved':
         return 'محجوز';
       case 'delivered':
-        return 'تم التسليم';
+        return 'تم التوصيل';
       default:
         return status;
     }
@@ -71,7 +71,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   }
 
   Color _statusBackground(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.trim().toLowerCase()) {
       case 'draft':
         return AppDesign.warning.withValues(alpha: 0.35);
       case 'published':
@@ -88,24 +88,21 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   }
 
   Color _statusTextColor(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.trim().toLowerCase()) {
       case 'draft':
         return AppDesign.primary;
       case 'published':
-        return AppDesign.success;
       case 'available':
-        return AppDesign.primary;
       case 'reserved':
-        return AppDesign.primary;
       case 'delivered':
-        return AppDesign.success;
+        return AppDesign.primary;
       default:
         return AppDesign.textPrimary;
     }
   }
 
   String formatBoxStatus(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.trim().toLowerCase()) {
       case 'draft':
         return 'مسودة';
       case 'published':
@@ -115,14 +112,14 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       case 'reserved':
         return 'تم الطلب';
       case 'delivered':
-        return 'تم التسليم';
+        return 'تم التوصيل';
       default:
         return status;
     }
   }
 
   IconData getBoxStatusIcon(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.trim().toLowerCase()) {
       case 'draft':
         return Icons.edit_note_outlined;
       case 'published':
@@ -138,21 +135,40 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     }
   }
 
-  Color getBoxStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'draft':
-        return AppDesign.warning;
-      case 'published':
-        return AppDesign.primary;
-      case 'available':
-        return AppDesign.softGreen;
-      case 'reserved':
-        return AppDesign.secondary;
-      case 'delivered':
-        return AppDesign.success;
-      default:
-        return AppDesign.textSecondary;
-    }
+  /// لون الحالة: مصدر واحد لكل المستويات (تبرع / صندوق / قطعة)
+  Color getBoxStatusColor(String status) => AppDesign.primary;
+
+  /// شارة حالة موحّدة (نفس الألوان والشكل في كل مكان)
+  Widget _statusPill(String status, {bool compact = true}) {
+    final fg = _statusTextColor(status);
+    return Container(
+      constraints: BoxConstraints(minHeight: compact ? 28 : 44),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 16,
+        vertical: compact ? 4 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: _statusBackground(status),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        textDirection: TextDirection.rtl,
+        children: [
+          Icon(getBoxStatusIcon(status), size: compact ? 15 : 18, color: fg),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              formatBoxStatus(status),
+              style: AppDesign.captionStyle.copyWith(
+                color: fg,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _chip(IconData icon, String text) {
@@ -206,58 +222,61 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
   Widget _deliveryChip(String method, {Widget? trailing}) {
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: trailing != null ? 12 : 14,
-      ),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppDesign.surface,
         borderRadius: BorderRadius.circular(AppDesign.radiusMD),
         border: Border.all(color: AppDesign.border),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisSize: trailing != null ? MainAxisSize.max : MainAxisSize.min,
-        textDirection: TextDirection.rtl,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(
-            Icons.local_shipping_outlined,
-            color: AppDesign.primary,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            "طريقة التوصيل",
-            style: AppDesign.captionStyle.copyWith(
-              color: AppDesign.textSecondary,
-            ),
-          ),
-          const SizedBox(width: 12),
-          if (trailing != null)
-            Expanded(
-              child: Text(
-                method,
-                style: AppDesign.bodyStyle.copyWith(
-                  fontWeight: FontWeight.w700,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            textDirection: TextDirection.rtl,
+            children: [
+              const Icon(
+                Icons.local_shipping_outlined,
+                color: AppDesign.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              // Wrap: إذا ما كفى العرض، القيمة تنزل سطر جديد بدل ما تنضغط
+              Expanded(
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      "طريقة التوصيل",
+                      style: AppDesign.captionStyle.copyWith(
+                        color: AppDesign.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      method,
+                      style: AppDesign.bodyStyle.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            )
-          else
-            Text(
-              method,
-              style: AppDesign.bodyStyle.copyWith(fontWeight: FontWeight.w700),
-            ),
-          if (trailing != null) trailing,
+            ],
+          ),
+          if (trailing != null) ...[const SizedBox(height: 12), trailing],
         ],
       ),
     );
   }
 
-  /// زر مسح الباركود (مربع على اليسار) لتأكيد التسليم للمستودع
-  /// مع نص صغير تحته
+  /// زر مسح الباركود لتأكيد التسليم للمستودع (بعرض كامل، يتكيف مع الشاشة)
   Widget _scanSquareButton(String donationId) {
-    return Tooltip(
-      message: 'مسح الباركود لتأكيد التسليم للمستودع',
+    return Material(
+      color: AppDesign.primary,
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () {
@@ -268,38 +287,30 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             ),
           );
         },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppDesign.primary,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            textDirection: TextDirection.rtl,
+            children: [
+              const Icon(
                 Icons.qr_code_scanner_rounded,
                 color: Colors.white,
-                size: 26,
+                size: 22,
               ),
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: 90,
-              child: Text(
-                'امسح الباركود لتأكيد تسليم التبرع',
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppDesign.captionStyle.copyWith(
-                  fontSize: 9,
-                  height: 1.2,
-                  color: AppDesign.textSecondary,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'امسح الباركود لتأكيد التسليم للمستودع',
+                  textAlign: TextAlign.center,
+                  style: AppDesign.captionStyle.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -562,7 +573,10 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   // قطع الصندوق (من كولكشن items، مع دعم الطريقة القديمة)
   // ============================================================
 
-  Widget _buildBoxItems(QueryDocumentSnapshot box) {
+  Widget _buildBoxItems(
+    QueryDocumentSnapshot box, {
+    bool showItemStatus = true,
+  }) {
     final bData = box.data() as Map<String, dynamic>;
     final legacy = bData['items'];
 
@@ -571,7 +585,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       final list = legacy
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
-      return _itemsColumn(list);
+      return _itemsColumn(list, showStatus: showItemStatus);
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -614,12 +628,16 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
         return _itemsColumn(
           docs.map((d) => d.data() as Map<String, dynamic>).toList(),
+          showStatus: showItemStatus,
         );
       },
     );
   }
 
-  Widget _itemsColumn(List<Map<String, dynamic>> items) {
+  Widget _itemsColumn(
+    List<Map<String, dynamic>> items, {
+    bool showStatus = true,
+  }) {
     return Padding(
       padding: const EdgeInsets.all(AppDesign.spaceMD),
       child: Column(
@@ -629,6 +647,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
           final String imageUrl = (item['imageUrl'] ?? '').toString();
           final String type = (item['type'] ?? '-').toString();
           final String size = (item['size'] ?? '').toString();
+          final String itemStatus = (item['status'] ?? '').toString().trim();
 
           return Container(
             margin: const EdgeInsets.only(bottom: AppDesign.spaceSM),
@@ -690,6 +709,32 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                     ],
                   ),
                 ),
+
+                /// حالة القطعة (يسار الكارد)
+                if (showStatus && itemStatus.isNotEmpty) ...[
+                  AppGap.wMD,
+                  SizedBox(
+                    height: 55,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          getBoxStatusIcon(itemStatus),
+                          size: 16,
+                          color: AppDesign.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          formatBoxStatus(itemStatus),
+                          style: AppDesign.captionStyle.copyWith(
+                            color: AppDesign.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           );
@@ -698,11 +743,99 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     );
   }
 
+  /// تحسب من حالات الأيتم: هل كل صندوق تم تسليمه؟ وهل التبرع كامل تم تسليمه؟
+  Widget _withDeliveryInfo({
+    required String donationId,
+    required Widget Function(
+      bool donationDelivered,
+      Map<String, bool> boxDelivered,
+    )
+    builder,
+  }) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('donation_boxes')
+          .where('donationId', isEqualTo: donationId)
+          .snapshots(),
+      builder: (context, boxSnap) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('items')
+              .where('donationId', isEqualTo: donationId)
+              .snapshots(),
+          builder: (context, itemSnap) {
+            final boxDocs = boxSnap.data?.docs ?? [];
+            final itemDocs = itemSnap.data?.docs ?? [];
+
+            final Map<String, List<String>> statusesByBox = {};
+            for (final i in itemDocs) {
+              final d = i.data() as Map<String, dynamic>;
+              final boxId = (d['boxId'] ?? '').toString();
+              statusesByBox
+                  .putIfAbsent(boxId, () => [])
+                  .add((d['status'] ?? '').toString().trim().toLowerCase());
+            }
+
+            final Map<String, bool> boxDelivered = {};
+            for (final b in boxDocs) {
+              final bd = b.data() as Map<String, dynamic>;
+              final legacy = bd['items'];
+
+              final List<String> statuses =
+                  (legacy is List && legacy.isNotEmpty)
+                  ? legacy
+                        .map(
+                          (e) => ((e as Map)['status'] ?? '')
+                              .toString()
+                              .trim()
+                              .toLowerCase(),
+                        )
+                        .toList()
+                  : (statusesByBox[b.id] ?? []);
+
+              boxDelivered[b.id] =
+                  statuses.isNotEmpty &&
+                  statuses.every((s) => s == 'delivered');
+            }
+
+            final bool donationDelivered =
+                boxDocs.isNotEmpty &&
+                boxDocs.every((b) => boxDelivered[b.id] == true);
+
+            return builder(donationDelivered, boxDelivered);
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildDonationCard(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final status = (data['status'] ?? '').toString();
+
+    // المسودات بدون أي تغيير
+    if (_isDraftStatus(status)) {
+      return _buildDonationCardContent(doc, false, const {});
+    }
+
+    return _withDeliveryInfo(
+      donationId: doc.id,
+      builder: (donationDelivered, boxDelivered) =>
+          _buildDonationCardContent(doc, donationDelivered, boxDelivered),
+    );
+  }
+
+  Widget _buildDonationCardContent(
+    DocumentSnapshot doc,
+    bool donationDelivered,
+    Map<String, bool> boxDelivered,
+  ) {
     final data = doc.data() as Map<String, dynamic>;
 
     final String gender = (data['gender'] ?? '-').toString();
     final String ageGroup = (data['ageGroup'] ?? '-').toString();
+    // للعنوان فقط: نشيل الأقواس من الفئة العمرية عشان ما تتداخل
+    final String ageGroupTitle = ageGroup.replaceAll(RegExp(r'[()]'), '').trim();
     final int numberOfItems = (data['numberOfItems'] ?? 0) as int;
     final String generalSize = (data['generalSize'] ?? '').toString();
     final String status = (data['status'] ?? '-').toString();
@@ -723,35 +856,20 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             children: [
               Expanded(
                 child: Text(
-                  'تبرع ($gender - $ageGroup)',
+                  'تبرع ($gender - $ageGroupTitle)',
                   textAlign: TextAlign.right,
                   style: AppDesign.subtitleStyle.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              const SizedBox(width: AppDesign.spaceSM),
-              Container(
-                constraints: const BoxConstraints(minHeight: 44),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: _statusBackground(status),
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: Center(
-                  child: Text(
-                    _formatStatus(status),
-                    style: AppDesign.captionStyle.copyWith(
-                      color: _statusTextColor(status),
-                      fontWeight: FontWeight.w700,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
+
+              // المسودة: ما تظهر أي حالة
+              // التبرع النشط: تظهر الشارة فقط إذا تم التسليم (محسوبة من الأيتم)
+              if (!isDraft && donationDelivered) ...[
+                const SizedBox(width: AppDesign.spaceSM),
+                _statusPill('delivered', compact: false),
+              ],
               const SizedBox(width: AppDesign.spaceSM),
               Container(
                 width: 44,
@@ -813,6 +931,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
                 // زر المسح: فقط للتوصيل الذاتي وإذا فيه صناديق لسا ما انسلمت
                 final bool showScan =
+                    !donationDelivered &&
                     deliveryMethod.toLowerCase() == 'self_delivery' &&
                     boxDocs.any(
                       (b) => _boxNeedsDropoff(b.data() as Map<String, dynamic>),
@@ -964,12 +1083,12 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                     ),
                     ...boxes.map((box) {
                       final bData = box.data() as Map<String, dynamic>;
-                      final rawStatus = (bData['status'] ?? '-').toString();
-                      final boxStatus = formatBoxStatus(rawStatus);
-                      final statusColor = getBoxStatusColor(rawStatus);
-                      final statusIcon = getBoxStatusIcon(rawStatus);
                       final boxCode = (bData['boxCode'] ?? '').toString();
                       final boxNumber = (bData['boxNumber'] ?? '').toString();
+
+                      // هل كل أيتم هذا الصندوق تم تسليمها؟ (محسوب من الأيتم)
+                      final bool thisBoxDelivered =
+                          boxDelivered[box.id] == true;
 
                       final String titleText = boxCode.isEmpty
                           ? 'صندوق $boxNumber'
@@ -987,26 +1106,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                           title: Row(
                             textDirection: TextDirection.rtl,
                             children: [
-                              Row(
-                                textDirection: TextDirection.rtl,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    statusIcon,
-                                    size: 18,
-                                    color: statusColor,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    boxStatus,
-                                    style: AppDesign.captionStyle.copyWith(
-                                      color: statusColor,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              AppGap.wMD,
+                              // اسم الصندوق على اليمين
                               Expanded(
                                 child: Align(
                                   alignment: Alignment.centerRight,
@@ -1027,9 +1127,22 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                                   ),
                                 ),
                               ),
+
+                              // الحالة على اليسار: "تم التسليم" فقط إذا الصندوق
+                              // مكتمل والتبرع لسا ما اكتمل. إذا التبرع كامل
+                              // تم تسليمه: ما نعرض أي حالة على الصناديق
+                              if (thisBoxDelivered && !donationDelivered) ...[
+                                AppGap.wMD,
+                                _statusPill('delivered'),
+                              ],
                             ],
                           ),
-                          children: [_buildBoxItems(box)],
+                          children: [
+                            _buildBoxItems(
+                              box,
+                              showItemStatus: !thisBoxDelivered,
+                            ),
+                          ],
                         ),
                       );
                     }),
@@ -1037,7 +1150,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                     AppGap.md,
                     SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton.icon(
+                      child: OutlinedButton.icon(
                         icon: const Icon(Icons.print),
                         label: const Text("طباعة جميع الملصقات"),
                         onPressed: () {
@@ -1435,6 +1548,51 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
           .where('donationId', isEqualTo: widget.donationId)
           .get();
 
+      // ── باركود التبرع نفسه (donationId): تسليم كل الصناديق المتبقية دفعة وحدة ──
+      if (_normalize(raw) == _normalize(widget.donationId)) {
+        final pending = snap.docs
+            .where((d) => d.data()['status'] != 'available')
+            .toList();
+
+        if (pending.isEmpty) {
+          _toast('تم تأكيد تسليم هذا التبرع مسبقاً', error: true);
+          await Future.delayed(const Duration(seconds: 2));
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
+
+        final batch = db.batch();
+
+        for (final box in pending) {
+          batch.update(box.reference, {
+            'status': 'available',
+            'receivedAtWarehouse': FieldValue.serverTimestamp(),
+          });
+
+          final itemsSnap = await db
+              .collection('items')
+              .where('boxId', isEqualTo: box.id)
+              .get();
+
+          for (final it in itemsSnap.docs) {
+            batch.update(it.reference, {'status': 'available'});
+          }
+        }
+
+        batch.update(db.collection('donations').doc(widget.donationId), {
+          'status': 'available',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        await batch.commit();
+
+        if (!mounted) return;
+        await _showSuccessDialog('تم تسليم التبرع بالكامل للمستودع');
+        if (!mounted) return;
+        Navigator.pop(context, true);
+        return;
+      }
+
       // دوّر على الصندوق اللي كوده يطابق الباركود
       QueryDocumentSnapshot<Map<String, dynamic>>? match;
       for (final d in snap.docs) {
@@ -1555,7 +1713,7 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Text(
-                  'وجّه الكاميرا نحو باركود الصندوق لتأكيد تسليمه',
+                  'وجّه الكاميرا نحو باركود الصندوق أو التبرع لتأكيد التسليم',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white, fontSize: 14),
                 ),
