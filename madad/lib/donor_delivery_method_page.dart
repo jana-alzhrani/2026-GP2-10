@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_design.dart';
+import 'box_code_generator.dart';
 
 class DonorDeliveryPage extends StatefulWidget {
   final String donationId;
@@ -323,11 +324,6 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
     }
   }
 
-  // ============================================================
-  // تأكيد طريقة التوصيل
-  // التبرع + الصناديق + القطع كلها تتحول إلى published في batch واحد
-  // ============================================================
-
   Future<void> _saveMethod() async {
     if (selectedMethod == null) {
       _showMessage('اختر طريقة التوصيل أولاً');
@@ -353,7 +349,6 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
 
       final donationRef = db.collection('donations').doc(widget.donationId);
 
-      /// 1. جلب الصناديق والقطع
       final boxesSnapshot = await db
           .collection('donation_boxes')
           .where('donationId', isEqualTo: widget.donationId)
@@ -366,7 +361,6 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
 
       final batch = db.batch();
 
-      /// 2. تحديث التبرع
       batch.update(donationRef, {
         'status': 'published',
         'deliveryMethod': selectedMethod,
@@ -381,21 +375,23 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      /// 3. تحديث الصناديق + توليد boxCode
       for (final boxDoc in boxesSnapshot.docs) {
         final data = boxDoc.data();
-        final boxNumber = data['boxNumber'] ?? 0;
 
-        final shortId = boxDoc.id.substring(0, 5).toUpperCase();
-        final boxCode = "BOX$boxNumber-$shortId";
+        final currentCode = data['boxCode']?.toString() ?? '';
 
-        batch.update(boxDoc.reference, {
+        final boxCode =
+            currentCode.isEmpty ||
+                RegExp(r'^BOX\d+-[A-Z0-9]+$').hasMatch(currentCode)
+            ? BoxCodeGenerator.generateBoxCode()
+            : currentCode;
+
+        await boxDoc.reference.update({
           'status': 'published',
           'boxCode': boxCode,
         });
       }
 
-      /// 4. تحديث القطع
       for (final itemDoc in itemsSnapshot.docs) {
         batch.update(itemDoc.reference, {'status': 'published'});
       }
@@ -615,7 +611,6 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
     );
   }
 
-  /// خطوة مرقّمة داخل بطاقة توضيح المسح
   Widget _scanStep(int number, String text) {
     return Padding(
       padding: const EdgeInsets.only(top: 10),
@@ -654,7 +649,6 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
     );
   }
 
-  /// بطاقة توضيح: لازم يمسح الباركود لتأكيد التسليم للمستودع
   Widget _scanNotice() {
     return Container(
       width: double.infinity,
@@ -736,7 +730,6 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
           Text(warehouseHours, style: AppDesign.bodySecondaryStyle),
           AppGap.lg,
 
-          // 👇 توضيح مسح الباركود
           _scanNotice(),
 
           AppGap.lg,
