@@ -9,7 +9,7 @@ Madad includes features such as donation tracking, delivery method selection, be
 By combining digital transformation with charitable work, Madad aims to support social responsibility and contribute to a more sustainable and connected community in alignment with Saudi Vision 2030.
 
 # 2.Repository Structure
-GP-Madad/ │ ├── Madad/ # First release │ ├── README.md # Project documentation ├── AUTHORS.md # Contributors 
+GP-Madad/ │ ├── Madad/ # Seconed release │ ├── README.md # Project documentation ├── AUTHORS.md # Contributors 
 # 3. Technologies Used
 Frontend: Flutter (Dart) Material Design Firebase SDK
 
