@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_design.dart';
 import 'Beneficiary_more_page.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'request_items_helper.dart';
 
 /// ─────────────── إعدادات قاعدة البيانات ───────────────
 const String kRequestsCollection = 'requests';
@@ -15,19 +16,13 @@ const String kBeneficiaryIdField = 'beneficiaryId';
 const String kBoxRequestIdField = 'requestId';
 
 /// حالات الطلبات التي تظهر في تبويب "الطلبات النشطة"
-const List<String> kActiveStatuses = [
-  'requested',
-  'reserved',
-  'delivered',
-];
+const List<String> kActiveStatuses = ['requested', 'reserved', 'delivered'];
 
 /// الحالة المكتملة (تُستخدم في كل الملف)
 const String kCompletedStatus = 'completed';
 
 /// حالات الطلبات التي تظهر في تبويب "الطلبات السابقة"
-const List<String> kPreviousStatuses = [
-  kCompletedStatus,
-];
+const List<String> kPreviousStatuses = [kCompletedStatus];
 
 const Map<String, String> kStatusLabels = {
   'requested': 'تم الطلب',
@@ -36,8 +31,7 @@ const Map<String, String> kStatusLabels = {
   'completed': 'تم الاستلام',
 };
 
-String _statusLabel(String s, {String method = ''}) =>
-    kStatusLabels[s] ?? s;
+String _statusLabel(String s, {String method = ''}) => kStatusLabels[s] ?? s;
 
 String _deliveryLabel(String m) {
   switch (m) {
@@ -67,10 +61,7 @@ String _fmtDate(DateTime? d) {
 class BeneficiaryOrdersPage extends StatefulWidget {
   final String userId;
 
-  const BeneficiaryOrdersPage({
-    super.key,
-    required this.userId,
-  });
+  const BeneficiaryOrdersPage({super.key, required this.userId});
 
   @override
   State<BeneficiaryOrdersPage> createState() => _BeneficiaryOrdersPageState();
@@ -97,9 +88,9 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
 
       final status = result.docs.isNotEmpty
           ? (result.docs.first.data()['status'] ?? 'pending')
-              .toString()
-              .trim()
-              .toLowerCase()
+                .toString()
+                .trim()
+                .toLowerCase()
           : 'pending';
 
       if (!mounted) return;
@@ -131,27 +122,27 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
           child: !_accessChecked
               ? const Center(child: CircularProgressIndicator())
               : !_isApproved
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'طلبك كمستفيد قيد المراجعة، وستتمكن من متابعة طلباتك بعد الموافقة.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppDesign.primary,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                          ),
-                        ),
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'طلبك كمستفيد قيد المراجعة، وستتمكن من متابعة طلباتك بعد الموافقة.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppDesign.primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
                       ),
-                    )
-                  : Column(
-                      children: [
-                        _buildHeader(),
-                        _buildTabs(),
-                        Expanded(child: _buildRequestsList()),
-                      ],
                     ),
+                  ),
+                )
+              : Column(
+                  children: [
+                    _buildHeader(),
+                    _buildTabs(),
+                    Expanded(child: _buildRequestsList()),
+                  ],
+                ),
         ),
       ),
     );
@@ -174,10 +165,7 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
           const SizedBox(height: 4),
           Text(
             "تابع حالة طلباتك النشطة والسابقة",
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
           ),
         ],
       ),
@@ -194,10 +182,7 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-            ),
+            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
           ],
         ),
         child: Row(
@@ -258,15 +243,11 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
       stream: query.snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const Center(
-            child: Text("حدث خطأ أثناء تحميل الطلبات"),
-          );
+          return const Center(child: Text("حدث خطأ أثناء تحميل الطلبات"));
         }
 
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
+          return const Center(child: CircularProgressIndicator());
         }
 
         final docs = [...?snapshot.data?.docs];
@@ -370,13 +351,19 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
           if (index == 0) {
-            Navigator.pushReplacementNamed(context, '/beneficiaryHome', arguments: widget.userId);
+            Navigator.pushReplacementNamed(
+              context,
+              '/beneficiaryHome',
+              arguments: widget.userId,
+            );
           } else if (_isApproved && index == 1) {
             return;
           } else {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (_) => BeneficiaryMorePage(userId: widget.userId)),
+              MaterialPageRoute(
+                builder: (_) => BeneficiaryMorePage(userId: widget.userId),
+              ),
             );
           }
         },
@@ -384,7 +371,6 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
       ),
     );
   }
-
 }
 
 /// ═══════════════════════════ كارد الطلب ═══════════════════════════
@@ -392,11 +378,7 @@ class OrderCard extends StatelessWidget {
   final String requestId;
   final Map<String, dynamic> data;
 
-  const OrderCard({
-    super.key,
-    required this.requestId,
-    required this.data,
-  });
+  const OrderCard({super.key, required this.requestId, required this.data});
 
   @override
   Widget build(BuildContext context) {
@@ -405,13 +387,15 @@ class OrderCard extends StatelessWidget {
     final createdAt = _toDate(data['createdAt']);
 
     final addr = data['deliveryAddress'];
-    final warehouseName =
-        addr is Map ? (addr['warehouseName'] ?? '').toString() : '';
+    final warehouseName = addr is Map
+        ? (addr['warehouseName'] ?? '').toString()
+        : '';
     final city = addr is Map ? (addr['city'] ?? '').toString() : '';
     final district = addr is Map ? (addr['district'] ?? '').toString() : '';
 
-    final shortId =
-        requestId.length < 6 ? requestId : requestId.substring(0, 6);
+    final shortId = requestId.length < 6
+        ? requestId
+        : requestId.substring(0, 6);
 
     // زر المسح يظهر فقط للاستلام من المستودع وقبل اكتمال الطلب
     final canScan = method == 'pickup' && status != kCompletedStatus;
@@ -423,10 +407,7 @@ class OrderCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
         ],
       ),
       child: Column(
@@ -536,213 +517,33 @@ class OrderCard extends StatelessWidget {
           ),
 
           // ─── الصناديق المرتبطة بالطلب (إن وجدت) ───
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection(kBoxesCollection)
-                .where(kBoxRequestIdField, isEqualTo: requestId)
-                .snapshots(),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: fetchRequestItems(requestId),
             builder: (context, snap) {
-              final boxes = snap.data?.docs ?? [];
-              if (boxes.isEmpty) return const SizedBox.shrink();
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.only(top: 16),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              }
+
+              final items = snap.data ?? [];
+              if (items.isEmpty) return const SizedBox.shrink();
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 16),
-                  Text(
-                    'الصناديق',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: AppDesign.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final b in boxes)
-                    _BoxTile(
-                      boxId: b.id,
-                      data: b.data(),
-                      statusLabel: _statusLabel(
-                        (b.data()['status'] ?? status).toString(),
-                        method: method,
-                      ),
-                    ),
+                  RequestItemsList(items: items),
                 ],
               );
             },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// ═══════════════════════════ صندوق (قابل للفتح) ═══════════════════════════
-class _BoxTile extends StatelessWidget {
-  final String boxId;
-  final Map<String, dynamic> data;
-  final String statusLabel;
-
-  const _BoxTile({
-    required this.boxId,
-    required this.data,
-    required this.statusLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final code =
-        (data['boxCode'] ?? data['code'] ?? data['boxNumber'] ?? boxId)
-            .toString();
-
-    // BOX1-SK8A9
-    // BOX1- = غامق
-    // SK8A9 = رمادي
-    final dash = code.indexOf('-');
-
-    final head = dash == -1 ? code : code.substring(0, dash + 1);
-    final tail = dash == -1 ? '' : code.substring(dash + 1);
-
-    final items = data['items'] is List ? data['items'] as List : const [];
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(
-          dividerColor: Colors.transparent,
-        ),
-        child: ExpansionTile(
-          initiallyExpanded: true,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-          shape: const Border(),
-          collapsedShape: const Border(),
-          title: Row(
-            children: [
-              Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: head,
-                      style: TextStyle(
-                        color: AppDesign.primary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    TextSpan(
-                      text: tail,
-                      style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ],
-                ),
-                textDirection: TextDirection.ltr,
-              ),
-              const Spacer(),
-            ],
-          ),
-          children: [
-            for (int i = 0; i < items.length; i++)
-              _ItemTile(
-                index: i,
-                item: items[i],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// ═══════════════════════════ قطعة داخل الصندوق ═══════════════════════════
-class _ItemTile extends StatelessWidget {
-  final int index;
-  final dynamic item;
-
-  const _ItemTile({
-    required this.index,
-    required this.item,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final map = item is Map ? item as Map : const {};
-
-    final imageUrl = map['imageUrl']?.toString();
-
-    final type =
-        (map['type'] ?? map['category'] ?? map['name'] ?? map['title'] ?? '')
-            .toString();
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 56,
-              height: 56,
-              child: (imageUrl == null || imageUrl.isEmpty)
-                  ? Container(
-                      color: Colors.grey.shade200,
-                      child: Icon(
-                        Icons.checkroom_outlined,
-                        color: Colors.grey.shade500,
-                      ),
-                    )
-                  : Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: Colors.grey.shade200,
-                        child: const Icon(
-                          Icons.broken_image,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'القطعة ${index + 1}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.grey.shade900,
-                  ),
-                ),
-                if (type.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    type,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ],
-            ),
           ),
         ],
       ),
@@ -754,9 +555,7 @@ class _ItemTile extends StatelessWidget {
 class _InfoBox extends StatelessWidget {
   final List<Widget> children;
 
-  const _InfoBox({
-    required this.children,
-  });
+  const _InfoBox({required this.children});
 
   @override
   Widget build(BuildContext context) {
@@ -767,9 +566,7 @@ class _InfoBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Column(
-        children: children,
-      ),
+      child: Column(children: children),
     );
   }
 }
@@ -793,18 +590,11 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 18,
-            color: AppDesign.primary,
-          ),
+          Icon(icon, size: 18, color: AppDesign.primary),
           const SizedBox(width: 8),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade500,
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -828,9 +618,7 @@ class _InfoRow extends StatelessWidget {
 class _StatusChip extends StatelessWidget {
   final String label;
 
-  const _StatusChip({
-    required this.label,
-  });
+  const _StatusChip({required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -927,81 +715,119 @@ class _PickupScanPageState extends State<PickupScanPage> {
 
     final raw = capture.barcodes
         .map((b) => b.rawValue)
-        .firstWhere((v) => v != null && v.trim().isNotEmpty,
-            orElse: () => null);
+        .firstWhere(
+          (v) => v != null && v.trim().isNotEmpty,
+          orElse: () => null,
+        );
     if (raw == null) return;
 
     setState(() => _busy = true);
 
     try {
       final db = FirebaseFirestore.instance;
+      final requestRef = db
+          .collection(kRequestsCollection)
+          .doc(widget.requestId);
 
-      final snap = await db
-          .collection(kBoxesCollection)
-          .where(kBoxRequestIdField, isEqualTo: widget.requestId)
+      // 1) تأكد أن الطلب لم يكتمل
+      final requestSnap = await requestRef.get();
+      if (requestSnap.data()?['status'] == kCompletedStatus) {
+        _toast('تم استلام هذا الطلب مسبقاً', error: true);
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+
+      // 2) قطع الطلب
+      final itemsSnap = await db
+          .collection('items')
+          .where('requestId', isEqualTo: widget.requestId)
           .get();
 
-      // دوّر على الصندوق اللي كوده يطابق الباركود
-      QueryDocumentSnapshot<Map<String, dynamic>>? match;
-      for (final d in snap.docs) {
-        if (_normalize(_codeOf(d.data(), d.id)) == _normalize(raw)) {
-          match = d;
+      if (itemsSnap.docs.isEmpty) {
+        _toast('لا توجد قطع مرتبطة بالطلب', error: true);
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+
+      // 3) صناديق هذه القطع
+      final boxIds = itemsSnap.docs
+          .map((d) => (d.data()['boxId'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      bool matched = false;
+      for (final id in boxIds) {
+        final boxSnap = await db.collection(kBoxesCollection).doc(id).get();
+        final data = boxSnap.data();
+        if (data == null) continue;
+
+        if (_normalize(_codeOf(data, id)) == _normalize(raw)) {
+          matched = true;
           break;
         }
       }
 
-      if (match == null) {
+      if (!matched) {
         _toast('هذا الباركود لا يخص طلبك', error: true);
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) setState(() => _busy = false);
         return;
       }
 
-      if (match.data()['status'] == kCompletedStatus) {
-        _toast('تم تأكيد استلام هذا الصندوق مسبقاً', error: true);
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted) setState(() => _busy = false);
-        return;
+      // 4) إكمال الطلب كله
+      final batch = db.batch();
+
+      for (final itemDoc in itemsSnap.docs) {
+        batch.update(itemDoc.reference, {'status': 'delivered'});
       }
 
-      // 1) تأكيد استلام الصندوق
-      await match.reference.update({
+      batch.update(requestRef, {
         'status': kCompletedStatus,
-        'receivedAt': FieldValue.serverTimestamp(),
+        'deliveredAt': FieldValue.serverTimestamp(),
       });
 
-      // 2) إذا كل الصناديق انستلمت، اقفل الطلب
-      final remaining = snap.docs
-          .where((d) =>
-              d.id != match!.id && d.data()['status'] != kCompletedStatus)
-          .toList();
+      // تحديث التبرعات اللي كل قطعها صارت مستلمة
+      final currentIds = itemsSnap.docs.map((d) => d.id).toSet();
 
-      final allDone = remaining.isEmpty;
+      final donationIds = itemsSnap.docs
+          .map((d) => (d.data()['donationId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
 
-      if (allDone) {
-        await db.collection(kRequestsCollection).doc(widget.requestId).update({
-          'status': kCompletedStatus,
-          'deliveredAt': FieldValue.serverTimestamp(),
-        });
+      for (final donationId in donationIds) {
+        final donationRef = db.collection('donations').doc(donationId);
+        final donationSnap = await donationRef.get();
+        if (!donationSnap.exists) continue;
+
+        final siblings = await db
+            .collection('items')
+            .where('donationId', isEqualTo: donationId)
+            .get();
+
+        final allDelivered = siblings.docs.every(
+          (i) => currentIds.contains(i.id) || i.data()['status'] == 'delivered',
+        );
+
+        if (allDelivered) {
+          batch.update(donationRef, {
+            'status': 'delivered',
+            'deliveredAt': FieldValue.serverTimestamp(),
+          });
+        }
       }
+
+      await batch.commit();
 
       if (!mounted) return;
 
-      // 3) رسالة "تم الاستلام"
-      await _showSuccessDialog(
-        allDone
-            ? 'تم استلام الطلب بالكامل'
-            : 'تم استلام الصندوق، باقي ${remaining.length}',
-      );
+      await _showSuccessDialog('تم استلام الطلب بنجاح');
 
       if (!mounted) return;
-
-      if (allDone) {
-        Navigator.pop(context, true);
-      } else {
-        setState(() => _busy = false);
-      }
+      Navigator.pop(context, true);
     } catch (e) {
+      debugPrint('PICKUP SCAN ERROR: $e');
       _toast('حدث خطأ، حاول مرة ثانية', error: true);
       if (mounted) setState(() => _busy = false);
     }
@@ -1027,10 +853,7 @@ class _PickupScanPageState extends State<PickupScanPage> {
         ),
         body: Stack(
           children: [
-            MobileScanner(
-              controller: _controller,
-              onDetect: _onDetect,
-            ),
+            MobileScanner(controller: _controller, onDetect: _onDetect),
             // إطار التوجيه
             Center(
               child: Container(
