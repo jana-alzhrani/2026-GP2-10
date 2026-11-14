@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'app_design.dart';
-import 'Beneficiary_view_donation_page.dart';
 import 'beneficiary_delivery_method_page.dart';
+import 'Beneficiary_view_item_page.dart';
 
 class BeneficiaryCartPage extends StatefulWidget {
   final String userId;
@@ -309,7 +309,7 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => BeneficiaryViewDonationPage(
+                  builder: (_) => BeneficiaryViewItemPage(
                     itemId: itemId,
                     boxId: boxId,
                     userId: widget.userId,
