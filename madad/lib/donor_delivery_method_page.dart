@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_design.dart';
 import 'box_code_generator.dart';
+import 'dart:math';
 
 class DonorDeliveryPage extends StatefulWidget {
   final String donationId;
@@ -377,18 +378,16 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
 
       for (final boxDoc in boxesSnapshot.docs) {
         final data = boxDoc.data();
+        final currentCode = (data['boxCode'] ?? '').toString().trim();
 
-        final currentCode = data['boxCode']?.toString() ?? '';
-
-        final boxCode =
+        // New code if none exists, or if it's in the old BOX1-XXXXX format
+        final needsNewCode =
             currentCode.isEmpty ||
-                RegExp(r'^BOX\d+-[A-Z0-9]+$').hasMatch(currentCode)
-            ? BoxCodeGenerator.generateBoxCode()
-            : currentCode;
+            RegExp(r'^BOX\d+-[A-Z0-9]+$').hasMatch(currentCode);
 
-        await boxDoc.reference.update({
+        batch.update(boxDoc.reference, {
           'status': 'published',
-          'boxCode': boxCode,
+          'boxCode': needsNewCode ? _generateBoxCode() : currentCode,
         });
       }
 
@@ -417,6 +416,16 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
     } finally {
       if (mounted) setState(() => saving = false);
     }
+  }
+
+  static const String _boxCodeChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  final Random _random = Random.secure();
+
+  String _generateBoxCode() {
+    return List.generate(
+      10,
+      (_) => _boxCodeChars[_random.nextInt(_boxCodeChars.length)],
+    ).join();
   }
 
   Widget _methodCard({
