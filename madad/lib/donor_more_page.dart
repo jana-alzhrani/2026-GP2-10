@@ -1,9 +1,8 @@
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'app_design.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DonorMorePage extends StatefulWidget {
   final String userId;
@@ -51,39 +50,11 @@ class _DonorMorePageState extends State<DonorMorePage> {
       });
     } catch (e) {
       debugPrint('Error loading user data: $e');
-
       if (!mounted) return;
       setState(() => isLoading = false);
     }
   }
 
-  // فتح نافذة تعديل الاسم
-  Future<void> _showEditNameSheet() async {
-    final result = await showModalBottomSheet<Map<String, String>>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _DonorEditNameSheet(
-        userId: widget.userId,
-        firstName: firstName,
-        lastName: lastName,
-      ),
-    );
-
-    if (result == null || !mounted) return;
-
-    setState(() {
-      firstName = result['firstName'] ?? firstName;
-      lastName = result['lastName'] ?? lastName;
-    });
-
-    AppDesign.showSuccessSnackBar(
-      context,
-      'تم تحديث البيانات بنجاح',
-    );
-  }
-
-  // تسجيل الخروج
   Future<void> _showLogoutDialog() async {
     final confirm = await AppDesign.showAppDialog(
       context: context,
@@ -114,9 +85,7 @@ class _DonorMorePageState extends State<DonorMorePage> {
         backgroundColor: AppDesign.background,
         body: SafeArea(
           child: isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(),
-                )
+              ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   child: Column(
@@ -160,7 +129,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
     );
   }
 
-  // بطاقة البيانات الشخصية
   Widget _buildPersonalCard() {
     return Container(
       width: double.infinity,
@@ -169,81 +137,52 @@ class _DonorMorePageState extends State<DonorMorePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'البيانات الشخصية',
-                  textAlign: TextAlign.right,
-                  style: AppDesign.h1Style.copyWith(
-                    color: AppDesign.primary,
-                    fontSize: 25,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              // زر تعديل مطابق للمستفيد
-              InkWell(
-                onTap: _showEditNameSheet,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppDesign.secondary.withOpacity(0.14),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.edit_outlined,
-                        size: 18,
-                        color: AppDesign.primary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'تعديل',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: AppDesign.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            'البيانات الشخصية',
+            textAlign: TextAlign.right,
+            style: AppDesign.h1Style.copyWith(
+              color: AppDesign.primary,
+              fontSize: 25,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-
           const SizedBox(height: 22),
-
           _buildInfoField(
             label: 'الاسم الأول',
             value: firstName,
             icon: Icons.person_outline_rounded,
           ),
-
           const SizedBox(height: 16),
-
           _buildInfoField(
             label: 'الاسم الأخير',
             value: lastName,
             icon: Icons.person_outline_rounded,
           ),
-
           const SizedBox(height: 16),
-
           _buildInfoField(
             label: 'رقم الجوال',
             value: phone,
             icon: Icons.phone_outlined,
+          ),
+          const SizedBox(height: 22),
+          SizedBox(
+            height: AppDesign.buttonHeightMD,
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: null,
+              style: ElevatedButton.styleFrom(
+                disabledBackgroundColor: const Color(0xFFE2E4E6),
+                disabledForegroundColor: const Color(0xFF7E858A),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppDesign.radiusLG),
+                ),
+              ),
+              child: const Text(
+                'تعديل',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+            ),
           ),
         ],
       ),
@@ -256,7 +195,7 @@ class _DonorMorePageState extends State<DonorMorePage> {
     required IconData icon,
   }) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start, // لضمان بقاء العنوان يمين
       children: [
         Text(
           label,
@@ -267,24 +206,20 @@ class _DonorMorePageState extends State<DonorMorePage> {
             fontWeight: FontWeight.w700,
           ),
         ),
-
         const SizedBox(height: 8),
-
         Container(
           height: AppDesign.inputHeight,
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             color: AppDesign.white,
-            borderRadius: BorderRadius.circular(
-              AppDesign.radiusLG,
-            ),
-            border: Border.all(
-              color: AppDesign.border,
-            ),
+            borderRadius: BorderRadius.circular(AppDesign.radiusLG),
+            border: Border.all(color: AppDesign.border),
           ),
           child: Row(
             children: [
+              // وضعنا الـ Expanded أولاً ليكون النص يمين، ثم الأيقونة يساره (برمجياً)
+              // وبسبب الـ Directionality RTL سيظهر النص يميناً والأيقونة يساره بصرياً
               Expanded(
                 child: Text(
                   value.isEmpty ? '-' : value,
@@ -298,14 +233,8 @@ class _DonorMorePageState extends State<DonorMorePage> {
                   ),
                 ),
               ),
-
               const SizedBox(width: 10),
-
-              Icon(
-                icon,
-                color: AppDesign.primary,
-                size: 22,
-              ),
+              Icon(icon, color: AppDesign.primary, size: 22),
             ],
           ),
         ),
@@ -339,7 +268,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
     );
   }
 
-  // حول مدد
   Widget _buildAboutMadadCard() {
     return Container(
       width: double.infinity,
@@ -348,6 +276,7 @@ class _DonorMorePageState extends State<DonorMorePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // ===== عنوان حول مدد =====
           Row(
             textDirection: TextDirection.rtl,
             children: [
@@ -365,18 +294,25 @@ class _DonorMorePageState extends State<DonorMorePage> {
           ),
 
           const SizedBox(height: 18),
-          Divider(color: AppDesign.border, thickness: 1),
+
+          Divider(
+            color: AppDesign.border,
+            thickness: 1,
+          ),
+
           const SizedBox(height: 20),
 
-          // موقع المستودع
+          // ===== موقع المستودع =====
           Row(
             textDirection: TextDirection.rtl,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              // أيقونة يمين
               _circleIcon(Icons.storefront_outlined),
 
               const SizedBox(width: 14),
 
+              // النص
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -393,9 +329,7 @@ class _DonorMorePageState extends State<DonorMorePage> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 4),
-
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
@@ -413,27 +347,29 @@ class _DonorMorePageState extends State<DonorMorePage> {
 
               const SizedBox(width: 12),
 
+              // زر الخريطة يسار
               SizedBox(
                 height: 48,
                 width: 140,
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    final Uri url = Uri.parse(
-                      'https://www.google.com/maps/search/?api=1&query=24.768932,46.728328',
-                    );
+                    const String googleMapUrl =
+                        'https://www.google.com/maps/search/?api=1&query=24.768932,46.728328';
 
-                    await launchUrl(
-                      url,
-                      mode: LaunchMode.externalApplication,
-                    );
+                    final Uri url = Uri.parse(googleMapUrl);
+
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(
+                        url,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
                   },
-
                   icon: Icon(
                     Icons.location_on_outlined,
                     color: AppDesign.primary,
                     size: 18,
                   ),
-
                   label: Text(
                     'فتح الخريطة',
                     style: AppDesign.bodyStyle.copyWith(
@@ -442,7 +378,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-
                   style: OutlinedButton.styleFrom(
                     backgroundColor: Colors.white,
                     elevation: 0,
@@ -462,18 +397,25 @@ class _DonorMorePageState extends State<DonorMorePage> {
           ),
 
           const SizedBox(height: 20),
-          Divider(color: AppDesign.border, thickness: 1),
+
+          Divider(
+            color: AppDesign.border,
+            thickness: 1,
+          ),
+
           const SizedBox(height: 20),
 
-          // ساعات العمل
+          // ===== ساعات العمل =====
           Row(
             textDirection: TextDirection.rtl,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // أيقونة يمين
               _circleIcon(Icons.access_time_rounded),
 
               const SizedBox(width: 14),
 
+              // النص
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -490,14 +432,11 @@ class _DonorMorePageState extends State<DonorMorePage> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 6),
-
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        'الأحد - الخميس: 9:00 ص - 5:00 م\n'
-                        'الجمعة والسبت: مغلق',
+                        'الأحد - الخميس: 9:00 ص - 5:00 م\nالجمعة والسبت: مغلق',
                         textAlign: TextAlign.right,
                         style: AppDesign.bodyStyle.copyWith(
                           color: AppDesign.textSecondary,
@@ -524,11 +463,7 @@ class _DonorMorePageState extends State<DonorMorePage> {
         color: AppDesign.secondary.withOpacity(0.14),
         shape: BoxShape.circle,
       ),
-      child: Icon(
-        icon,
-        color: AppDesign.primary,
-        size: 24,
-      ),
+      child: Icon(icon, color: AppDesign.primary, size: 24),
     );
   }
 
@@ -547,11 +482,7 @@ class _DonorMorePageState extends State<DonorMorePage> {
             ),
           ),
           const SizedBox(width: 8),
-          const Icon(
-            Icons.logout_rounded,
-            color: Colors.red,
-            size: 24,
-          ),
+          const Icon(Icons.logout_rounded, color: Colors.red, size: 24),
         ],
       ),
     );
@@ -560,12 +491,8 @@ class _DonorMorePageState extends State<DonorMorePage> {
   BoxDecoration _cardDecoration() {
     return BoxDecoration(
       color: AppDesign.white,
-      borderRadius: BorderRadius.circular(
-        AppDesign.radiusXL,
-      ),
-      border: Border.all(
-        color: AppDesign.border,
-      ),
+      borderRadius: BorderRadius.circular(AppDesign.radiusXL),
+      border: Border.all(color: AppDesign.border),
       boxShadow: [
         BoxShadow(
           color: AppDesign.black.withOpacity(0.05),
@@ -581,9 +508,7 @@ class _DonorMorePageState extends State<DonorMorePage> {
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       decoration: BoxDecoration(
         color: AppDesign.white,
-        borderRadius: BorderRadius.circular(
-          AppDesign.radiusXL,
-        ),
+        borderRadius: BorderRadius.circular(AppDesign.radiusXL),
         boxShadow: [
           BoxShadow(
             color: AppDesign.black.withOpacity(0.06),
@@ -596,15 +521,11 @@ class _DonorMorePageState extends State<DonorMorePage> {
         height: 78,
         selectedIndex: _bottomNavIndex,
         backgroundColor: Colors.transparent,
-        indicatorColor:
-            AppDesign.secondary.withOpacity(0.16),
+        indicatorColor: AppDesign.secondary.withOpacity(0.16),
         surfaceTintColor: Colors.transparent,
-        labelBehavior:
-            NavigationDestinationLabelBehavior.alwaysShow,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
-          if (index == _bottomNavIndex && index == 2) {
-            return;
-          }
+          if (index == _bottomNavIndex && index == 2) return;
 
           setState(() {
             _bottomNavIndex = index;
@@ -626,426 +547,24 @@ class _DonorMorePageState extends State<DonorMorePage> {
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(
-              Icons.home_outlined,
-              color: AppDesign.primary,
-            ),
-            selectedIcon: Icon(
-              Icons.home_rounded,
-              color: AppDesign.primary,
-            ),
+            icon: Icon(Icons.home_outlined, color: AppDesign.primary),
+            selectedIcon: Icon(Icons.home_rounded, color: AppDesign.primary),
             label: 'الرئيسية',
           ),
           NavigationDestination(
-            icon: Icon(
-              Icons.volunteer_activism_outlined,
-              color: AppDesign.primary,
-            ),
-            selectedIcon: Icon(
-              Icons.volunteer_activism_rounded,
-              color: AppDesign.primary,
-            ),
+            icon: Icon(Icons.volunteer_activism_outlined,
+                color: AppDesign.primary),
+            selectedIcon: Icon(Icons.volunteer_activism_rounded,
+                color: AppDesign.primary),
             label: 'تبرعاتي',
           ),
           NavigationDestination(
-            icon: Icon(
-              Icons.more_horiz_rounded,
-              color: AppDesign.primary,
-            ),
-            selectedIcon: Icon(
-              Icons.more_horiz_rounded,
-              color: AppDesign.primary,
-            ),
+            icon: Icon(Icons.more_horiz_rounded, color: AppDesign.primary),
+            selectedIcon:
+                Icon(Icons.more_horiz_rounded, color: AppDesign.primary),
             label: 'المزيد',
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ======================================================
-// نافذة تعديل الاسم - نفس تصميم صفحة المستفيد
-// ======================================================
-
-class _DonorEditNameSheet extends StatefulWidget {
-  final String userId;
-  final String firstName;
-  final String lastName;
-
-  const _DonorEditNameSheet({
-    required this.userId,
-    required this.firstName,
-    required this.lastName,
-  });
-
-  @override
-  State<_DonorEditNameSheet> createState() =>
-      _DonorEditNameSheetState();
-}
-
-class _DonorEditNameSheetState
-    extends State<_DonorEditNameSheet> {
-  final _formKey = GlobalKey<FormState>();
-
-  late final TextEditingController _firstCtrl;
-  late final TextEditingController _lastCtrl;
-
-  bool _saving = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _firstCtrl = TextEditingController(
-      text: widget.firstName,
-    );
-    _lastCtrl = TextEditingController(
-      text: widget.lastName,
-    );
-  }
-
-  @override
-  void dispose() {
-    _firstCtrl.dispose();
-    _lastCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final first = _firstCtrl.text.trim();
-    final last = _lastCtrl.text.trim();
-
-    // لا يوجد تعديل
-    if (first == widget.firstName &&
-        last == widget.lastName) {
-      Navigator.pop(context);
-      return;
-    }
-
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-
-    try {
-      // حفظ البيانات في Firestore
-      await FirebaseFirestore.instance
-          .collection('Users')
-          .doc(widget.userId)
-          .set({
-        'firstName': first,
-        'lastName': last,
-      }, SetOptions(merge: true));
-
-      // تحديث الاسم في Firebase Authentication
-      try {
-        final authUser =
-            FirebaseAuth.instance.currentUser;
-
-        if (authUser != null &&
-            authUser.uid == widget.userId) {
-          await authUser.updateDisplayName(
-            '$first $last',
-          );
-        }
-      } catch (e) {
-        debugPrint(
-          'Auth displayName update failed: $e',
-        );
-      }
-
-      if (!mounted) return;
-
-      Navigator.pop(context, {
-        'firstName': first,
-        'lastName': last,
-      });
-    } catch (e) {
-      debugPrint(
-        'Error updating donor profile: $e',
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _saving = false;
-        _error = 'تعذّر حفظ التعديل، حاولي مرة أخرى';
-      });
-    }
-  }
-
-  String? _validateName(String? value) {
-    final text = (value ?? '').trim();
-
-    if (text.isEmpty) {
-      return 'هذا الحقل مطلوب';
-    }
-
-    if (text.length < 2) {
-      return 'الاسم قصير جداً';
-    }
-
-    return null;
-  }
-
-  InputDecoration _decoration(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      counterText: '',
-      prefixIcon: Icon(
-        Icons.person_outline_rounded,
-        color: AppDesign.primary,
-      ),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 16,
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(
-          AppDesign.radiusLG,
-        ),
-        borderSide: BorderSide(
-          color: AppDesign.border,
-        ),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(
-          AppDesign.radiusLG,
-        ),
-        borderSide: BorderSide(
-          color: AppDesign.border,
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(
-          AppDesign.radiusLG,
-        ),
-        borderSide: BorderSide(
-          color: AppDesign.primary,
-          width: 1.6,
-        ),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(
-          AppDesign.radiusLG,
-        ),
-        borderSide: BorderSide(
-          color: AppDesign.error,
-          width: 1.2,
-        ),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(
-          AppDesign.radiusLG,
-        ),
-        borderSide: BorderSide(
-          color: AppDesign.error,
-          width: 1.6,
-        ),
-      ),
-      errorStyle: TextStyle(
-        fontFamily: AppDesign.fontFamily,
-        fontSize: AppDesign.caption,
-        fontWeight: FontWeight.w400,
-        color: AppDesign.error,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Padding(
-        padding: EdgeInsets.only(
-          bottom:
-              MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(
-            20, 14, 20, 24,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(28),
-            ),
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment:
-                  CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius:
-                          BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-
-                Text(
-                  'تعديل البيانات الشخصية',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: AppDesign.primary,
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                Text(
-                  'الاسم الأول',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppDesign.textPrimary,
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                TextFormField(
-                  controller: _firstCtrl,
-                  enabled: !_saving,
-                  maxLength: 30,
-                  textInputAction:
-                      TextInputAction.next,
-                  cursorColor: AppDesign.primary,
-                  decoration:
-                      _decoration('الاسم الأول'),
-                  validator: _validateName,
-                ),
-
-                const SizedBox(height: 16),
-
-                Text(
-                  'الاسم الأخير',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppDesign.textPrimary,
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                TextFormField(
-                  controller: _lastCtrl,
-                  enabled: !_saving,
-                  maxLength: 30,
-                  textInputAction:
-                      TextInputAction.done,
-                  onFieldSubmitted: (_) {
-                    if (!_saving) {
-                      _save();
-                    }
-                  },
-                  cursorColor: AppDesign.primary,
-                  decoration:
-                      _decoration('الاسم الأخير'),
-                  validator: _validateName,
-                ),
-
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    _error!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily:
-                          AppDesign.fontFamily,
-                      color: AppDesign.error,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 22),
-
-                SizedBox(
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed:
-                        _saving ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          AppDesign.primary,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor:
-                          AppDesign.primary
-                              .withOpacity(0.6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(
-                          AppDesign.radiusLG,
-                        ),
-                      ),
-                    ),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child:
-                                CircularProgressIndicator(
-                              strokeWidth: 2.4,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'حفظ',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight:
-                                  FontWeight.w800,
-                            ),
-                          ),
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton(
-                    onPressed: _saving ? null : () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppDesign.primary,
-                      side: const BorderSide(color: AppDesign.primary, width: 1.5),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppDesign.radiusLG),
-                      ),
-                    ),
-                    child: const Text(
-                      'إلغاء',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
