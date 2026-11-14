@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 
 import 'app_design.dart';
 
-class BeneficiaryViewDonationPage extends StatefulWidget {
+class BeneficiaryViewItemPage extends StatefulWidget {
   final String itemId;
   final String boxId;
   final String userId;
 
-  const BeneficiaryViewDonationPage({
+  const BeneficiaryViewItemPage({
     super.key,
     required this.itemId,
     required this.boxId,
@@ -19,14 +19,17 @@ class BeneficiaryViewDonationPage extends StatefulWidget {
   });
 
   @override
-  State<BeneficiaryViewDonationPage> createState() =>
-      _BeneficiaryViewDonationPageState();
+  State<BeneficiaryViewItemPage> createState() =>
+      _BeneficiaryViewItemPageState();
 }
 
-class _BeneficiaryViewDonationPageState
-    extends State<BeneficiaryViewDonationPage> {
+class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
   bool _isAddingToCart = false;
   late final Future<Map<String, dynamic>> _itemFuture;
+
+  // Both streams are created once so they aren't re-created on every rebuild.
+  late final Stream<bool> _inCartStreamValue = _inCartStream();
+  late final Stream<bool> _itemAvailableStreamValue = _itemAvailableStream();
 
   @override
   void initState() {
@@ -95,6 +98,7 @@ class _BeneficiaryViewDonationPageState
     return value.toString();
   }
 
+  // هل القطعة في سلة المستفيد؟
   Stream<bool> _inCartStream() {
     return FirebaseFirestore.instance
         .collection('cart')
@@ -106,12 +110,31 @@ class _BeneficiaryViewDonationPageState
         .map((snap) => snap.docs.isNotEmpty);
   }
 
+  // هل القطعة ما زالت متاحة؟ (تتحدث فورًا لو انحجزت أو انحذفت)
+  Stream<bool> _itemAvailableStream() {
+    return FirebaseFirestore.instance
+        .collection('items')
+        .doc(widget.itemId)
+        .snapshots()
+        .map((snap) => snap.exists && snap.data()?['status'] == 'available');
+  }
+
   Future<void> _addToCart(Map<String, dynamic> loadedData) async {
     if (_isAddingToCart) return;
 
     setState(() => _isAddingToCart = true);
     try {
-      final beneficiaryDoc = await FirebaseFirestore.instance
+      final db = FirebaseFirestore.instance;
+
+      // فحص أخير: القطعة لسا متاحة؟
+      final freshItem = await db.collection('items').doc(widget.itemId).get();
+      if (!freshItem.exists || freshItem.data()?['status'] != 'available') {
+        if (!mounted) return;
+        AppDesign.showErrorSnackBar(context, 'هذه القطعة لم تعد متاحة');
+        return;
+      }
+
+      final beneficiaryDoc = await db
           .collection('beneficiaries')
           .doc(widget.userId)
           .get();
@@ -132,7 +155,7 @@ class _BeneficiaryViewDonationPageState
         return;
       }
 
-      final existing = await FirebaseFirestore.instance
+      final existing = await db
           .collection('cart')
           .where('beneficiaryId', isEqualTo: widget.userId)
           .where('itemId', isEqualTo: widget.itemId)
@@ -150,7 +173,7 @@ class _BeneficiaryViewDonationPageState
 
       final rawSize = (item['size'] ?? '').toString().trim();
 
-      await FirebaseFirestore.instance.collection('cart').add({
+      await db.collection('cart').add({
         'beneficiaryId': widget.userId,
         'itemId': widget.itemId,
         'boxId': loadedData['boxId'] ?? '',
@@ -243,6 +266,68 @@ class _BeneficiaryViewDonationPageState
           color: AppDesign.secondary,
         ),
       ),
+    );
+  }
+
+  // زر الإضافة للسلة: يتحدث فورًا حسب حالة القطعة والسلة
+  Widget _buildCartButton(Map<String, dynamic> loadedData) {
+    return StreamBuilder<bool>(
+      stream: _itemAvailableStreamValue,
+      builder: (context, availableSnap) {
+        // قبل وصول أول تحديث نعتبرها متاحة (تم التحقق منها عند التحميل)
+        final isAvailable = availableSnap.data ?? true;
+
+        return StreamBuilder<bool>(
+          stream: _inCartStreamValue,
+          builder: (context, cartSnap) {
+            final inCart = cartSnap.data ?? false;
+
+            final disabled = _isAddingToCart || inCart || !isAvailable;
+
+            final IconData icon = !isAvailable
+                ? Icons.block_outlined
+                : inCart
+                ? Icons.check_circle_outline
+                : Icons.shopping_cart_outlined;
+
+            final String label = _isAddingToCart
+                ? 'جارٍ الإضافة...'
+                : !isAvailable
+                ? 'القطعة غير متاحة حاليًا'
+                : inCart
+                ? 'المنتج موجود بالسلة'
+                : 'إضافة القطعة إلى السلة';
+
+            return SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: disabled ? null : () => _addToCart(loadedData),
+                icon: _isAddingToCart
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(icon),
+                label: Text(label),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppDesign.primary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppDesign.primary.withOpacity(0.35),
+                  disabledForegroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppDesign.radiusLG),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -357,56 +442,7 @@ class _BeneficiaryViewDonationPageState
                   top: false,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: StreamBuilder<bool>(
-                      stream: _inCartStream(),
-                      builder: (context, cartSnap) {
-                        final inCart = cartSnap.data ?? false;
-                        final disabled = _isAddingToCart || inCart;
-
-                        return SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: ElevatedButton.icon(
-                            onPressed: disabled
-                                ? null
-                                : () => _addToCart(loadedData),
-                            icon: _isAddingToCart
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : Icon(
-                                    inCart
-                                        ? Icons.check_circle_outline
-                                        : Icons.shopping_cart_outlined,
-                                  ),
-                            label: Text(
-                              _isAddingToCart
-                                  ? 'جارٍ الإضافة...'
-                                  : inCart
-                                  ? 'المنتج موجود بالسلة'
-                                  : 'إضافة القطعة إلى السلة',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppDesign.primary,
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: AppDesign.primary
-                                  .withOpacity(0.35),
-                              disabledForegroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppDesign.radiusLG,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                    child: _buildCartButton(loadedData),
                   ),
                 ),
               ],
