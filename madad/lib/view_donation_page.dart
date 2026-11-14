@@ -316,15 +316,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     );
   }
 
-  String generateBoxCode(int boxNumber) {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final random = Random();
-    return List.generate(
-      10,
-      (index) => chars[random.nextInt(chars.length)],
-    ).join();
-  }
-
   Future<void> _deleteDonation(String docId) async {
     final confirm = await AppDesign.showAppDialog(
       context: context,
