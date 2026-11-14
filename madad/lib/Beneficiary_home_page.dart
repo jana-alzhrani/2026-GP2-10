@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
+import 'dart:async';
 import 'app_design.dart';
 import 'Beneficiary_more_page.dart';
 import 'Beneficiary_view_donation_page.dart';
@@ -10,14 +10,10 @@ import 'Beneficiary_cart_page.dart';
 class BeneficiaryHomePage extends StatefulWidget {
   final String userId;
 
-  const BeneficiaryHomePage({
-    super.key,
-    required this.userId,
-  });
+  const BeneficiaryHomePage({super.key, required this.userId});
 
   @override
-  State<BeneficiaryHomePage> createState() =>
-      _BeneficiaryHomePageState();
+  State<BeneficiaryHomePage> createState() => _BeneficiaryHomePageState();
 }
 
 class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
@@ -31,7 +27,8 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
 
   List<Map<String, dynamic>> boxes = [];
   bool isLoading = true;
-
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _itemsSub;
+  final Map<String, Map<String, dynamic>> _boxCache = {};
   String firstName = "";
   String lastName = "";
 
@@ -39,8 +36,14 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
   void initState() {
     super.initState();
     loadUserData();
-    loadBoxes();
+    _listenToItems();
     loadBeneficiaryStatus();
+  }
+
+  @override
+  void dispose() {
+    _itemsSub?.cancel();
+    super.dispose();
   }
 
   // ============================================================
@@ -69,227 +72,205 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     }
   }
 
-Future<void> _openCartIfApproved() async {
-  try {
-    final beneficiaryQuery = await FirebaseFirestore.instance
-    .collection('beneficiaries')
-    .where('userId', isEqualTo: widget.userId)
-    .limit(1)
-    .get();
+  Future<void> _openCartIfApproved() async {
+    try {
+      final beneficiaryQuery = await FirebaseFirestore.instance
+          .collection('beneficiaries')
+          .where('userId', isEqualTo: widget.userId)
+          .limit(1)
+          .get();
 
-final beneficiaryDoc = beneficiaryQuery.docs.isNotEmpty
-    ? beneficiaryQuery.docs.first
-    : null;
+      final beneficiaryDoc = beneficiaryQuery.docs.isNotEmpty
+          ? beneficiaryQuery.docs.first
+          : null;
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    final status = (beneficiaryDoc?.data()['status'] ?? 'pending')
-    .toString()
-    .trim()
-    .toLowerCase();
+      final status = (beneficiaryDoc?.data()['status'] ?? 'pending')
+          .toString()
+          .trim()
+          .toLowerCase();
 
-if (beneficiaryDoc == null || status != 'approved') {
-      final message = status == 'rejected'
-          ? 'عذرًا، لم تتم الموافقة على طلبك كمستفيد.'
-          : 'طلبك كمستفيد قيد المراجعة، ويمكنك استخدام السلة بعد الموافقة.';
+      if (beneficiaryDoc == null || status != 'approved') {
+        final message = status == 'rejected'
+            ? 'عذرًا، لم تتم الموافقة على طلبك كمستفيد.'
+            : 'طلبك كمستفيد قيد المراجعة، ويمكنك استخدام السلة بعد الموافقة.';
 
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Directionality(
-              textDirection: TextDirection.rtl,
-              child: Text(
-                message,
-                textAlign: TextAlign.right,
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Text(message, textAlign: TextAlign.right),
               ),
+              behavior: SnackBarBehavior.floating,
             ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+          );
 
-      return;
-    }
+        return;
+      }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BeneficiaryCartPage(
-          userId: widget.userId,
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BeneficiaryCartPage(userId: widget.userId),
         ),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
+      );
+    } catch (e) {
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('تعذر التحقق من حالة المستفيد، حاول مرة أخرى.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر التحقق من حالة المستفيد، حاول مرة أخرى.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
-}
-Future<void> loadBeneficiaryStatus() async {
-  try {
-    final query = await FirebaseFirestore.instance
-        .collection('beneficiaries')
-        .where('userId', isEqualTo: widget.userId)
-        .limit(1)
-        .get();
 
-    if (!mounted) return;
+  Future<void> loadBeneficiaryStatus() async {
+    try {
+      final query = await FirebaseFirestore.instance
+          .collection('beneficiaries')
+          .where('userId', isEqualTo: widget.userId)
+          .limit(1)
+          .get();
 
-    setState(() {
-      beneficiaryStatus = query.docs.isNotEmpty
-          ? (query.docs.first.data()['status'] ?? 'pending')
-              .toString()
-              .trim()
-              .toLowerCase()
-          : 'pending';
-      _beneficiaryStatusLoaded = true;
-    });
-  } catch (e) {
-    debugPrint('BENEFICIARY STATUS ERROR: $e');
-    if (!mounted) return;
-    setState(() {
-      _beneficiaryStatusLoaded = true;
-    });
+      if (!mounted) return;
+
+      setState(() {
+        beneficiaryStatus = query.docs.isNotEmpty
+            ? (query.docs.first.data()['status'] ?? 'pending')
+                  .toString()
+                  .trim()
+                  .toLowerCase()
+            : 'pending';
+        _beneficiaryStatusLoaded = true;
+      });
+    } catch (e) {
+      debugPrint('BENEFICIARY STATUS ERROR: $e');
+      if (!mounted) return;
+      setState(() {
+        _beneficiaryStatusLoaded = true;
+      });
+    }
   }
-}
 
   // ============================================================
   // NOTIFICATIONS
   // ============================================================
-Future<void> _showNoNotifications() async {
-  await showGeneralDialog<void>(
-    context: context,
-    barrierDismissible: true,
-    barrierLabel: 'إغلاق',
-    barrierColor: Colors.black.withOpacity(0.25),
-    transitionDuration: const Duration(milliseconds: 250),
-    pageBuilder: (
-      dialogContext,
-      animation,
-      secondaryAnimation,
-    ) {
-      return SafeArea(
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                width: double.infinity,
-                margin: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: AppDesign.white,
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.10),
-                      blurRadius: 22,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: AppDesign.secondary.withOpacity(0.15),
-                        shape: BoxShape.circle,
+  Future<void> _showNoNotifications() async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'إغلاق',
+      barrierColor: Colors.black.withOpacity(0.25),
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppDesign.white,
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.10),
+                        blurRadius: 22,
+                        offset: const Offset(0, 8),
                       ),
-                      child: const Icon(
-                        Icons.notifications_none_rounded,
-                        color: AppDesign.primary,
-                        size: 28,
-                      ),
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    Text(
-                      'الإشعارات',
-                      style: AppDesign.h1Style.copyWith(
-                        color: AppDesign.primary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Text(
-                      'لا توجد إشعارات جديدة حاليًا',
-                      textAlign: TextAlign.center,
-                      style: AppDesign.bodyStyle.copyWith(
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppDesign.primary,
-                          foregroundColor: AppDesign.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: AppDesign.secondary.withOpacity(0.15),
+                          shape: BoxShape.circle,
                         ),
-                        onPressed: () {
-                          Navigator.of(dialogContext).pop();
-                        },
-                        child: const Text(
-                          'حسنًا',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
+                        child: const Icon(
+                          Icons.notifications_none_rounded,
+                          color: AppDesign.primary,
+                          size: 28,
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      Text(
+                        'الإشعارات',
+                        style: AppDesign.h1Style.copyWith(
+                          color: AppDesign.primary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Text(
+                        'لا توجد إشعارات جديدة حاليًا',
+                        textAlign: TextAlign.center,
+                        style: AppDesign.bodyStyle.copyWith(
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppDesign.primary,
+                            foregroundColor: AppDesign.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.of(dialogContext).pop();
+                          },
+                          child: const Text(
+                            'حسنًا',
+                            style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-    },
-    transitionBuilder: (
-      context,
-      animation,
-      secondaryAnimation,
-      child,
-    ) {
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, -0.25),
-          end: Offset.zero,
-        ).animate(
-          CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOut,
-          ),
-        ),
-        child: FadeTransition(
-          opacity: animation,
-          child: child,
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, -0.25),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+    );
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _notificationsStream() {
     return FirebaseFirestore.instance
         .collection('notifications')
@@ -297,8 +278,7 @@ Future<void> _showNoNotifications() async {
         .snapshots();
   }
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>>
-      _getUnreadNotifications(
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _getUnreadNotifications(
     QuerySnapshot<Map<String, dynamic>>? snapshot,
   ) {
     if (snapshot == null) return [];
@@ -321,17 +301,12 @@ Future<void> _showNoNotifications() async {
     return unread;
   }
 
-  Future<void> _markNotificationAsRead(
-    String notificationId,
-  ) async {
+  Future<void> _markNotificationAsRead(String notificationId) async {
     try {
       await FirebaseFirestore.instance
           .collection('notifications')
           .doc(notificationId)
-          .update({
-        'isRead': true,
-        'readAt': FieldValue.serverTimestamp(),
-      });
+          .update({'isRead': true, 'readAt': FieldValue.serverTimestamp()});
     } catch (e) {
       debugPrint("NOTIFICATION READ ERROR: $e");
     }
@@ -344,20 +319,15 @@ Future<void> _showNoNotifications() async {
 
     final type = (data['type'] ?? '').toString();
 
-    final title =
-        (data['title'] ?? 'إشعار جديد').toString();
+    final title = (data['title'] ?? 'إشعار جديد').toString();
 
-    final message =
-        (data['message'] ?? '').toString();
+    final message = (data['message'] ?? '').toString();
 
-    final rejectionReason =
-        (data['rejectionReason'] ?? '').toString().trim();
+    final rejectionReason = (data['rejectionReason'] ?? '').toString().trim();
 
-    final bool isApproved =
-        type == 'beneficiary_approved';
+    final bool isApproved = type == 'beneficiary_approved';
 
-    final bool isRejected =
-        type == 'beneficiary_rejected';
+    final bool isRejected = type == 'beneficiary_rejected';
 
     await showGeneralDialog<void>(
       context: context,
@@ -365,11 +335,7 @@ Future<void> _showNoNotifications() async {
       barrierLabel: 'إغلاق',
       barrierColor: Colors.black.withOpacity(0.25),
       transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (
-        dialogContext,
-        animation,
-        secondaryAnimation,
-      ) {
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return SafeArea(
           child: Directionality(
             textDirection: TextDirection.rtl,
@@ -379,12 +345,7 @@ Future<void> _showNoNotifications() async {
                 color: Colors.transparent,
                 child: Container(
                   width: double.infinity,
-                  margin: const EdgeInsets.fromLTRB(
-                    16,
-                    18,
-                    16,
-                    0,
-                  ),
+                  margin: const EdgeInsets.fromLTRB(16, 18, 16, 0),
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: AppDesign.white,
@@ -399,8 +360,7 @@ Future<void> _showNoNotifications() async {
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment:
-                        CrossAxisAlignment.stretch,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
                         children: [
@@ -411,23 +371,21 @@ Future<void> _showNoNotifications() async {
                               color: isApproved
                                   ? Colors.green.withOpacity(0.10)
                                   : isRejected
-                                      ? Colors.red.withOpacity(0.08)
-                                      : AppDesign.secondary
-                                          .withOpacity(0.15),
+                                  ? Colors.red.withOpacity(0.08)
+                                  : AppDesign.secondary.withOpacity(0.15),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
                               isApproved
                                   ? Icons.check_rounded
                                   : isRejected
-                                      ? Icons.close_rounded
-                                      : Icons
-                                          .notifications_none_rounded,
+                                  ? Icons.close_rounded
+                                  : Icons.notifications_none_rounded,
                               color: isApproved
                                   ? Colors.green.shade700
                                   : isRejected
-                                      ? Colors.red.shade700
-                                      : AppDesign.primary,
+                                  ? Colors.red.shade700
+                                  : AppDesign.primary,
                               size: 26,
                             ),
                           ),
@@ -436,13 +394,11 @@ Future<void> _showNoNotifications() async {
 
                           Expanded(
                             child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   'إشعار جديد',
-                                  style:
-                                      AppDesign.bodyStyle.copyWith(
+                                  style: AppDesign.bodyStyle.copyWith(
                                     color: Colors.grey.shade600,
                                     fontSize: 12,
                                   ),
@@ -450,8 +406,7 @@ Future<void> _showNoNotifications() async {
                                 const SizedBox(height: 3),
                                 Text(
                                   title,
-                                  style:
-                                      AppDesign.h1Style.copyWith(
+                                  style: AppDesign.h1Style.copyWith(
                                     color: AppDesign.primary,
                                     fontSize: 19,
                                     fontWeight: FontWeight.w800,
@@ -472,49 +427,38 @@ Future<void> _showNoNotifications() async {
                             color: isApproved
                                 ? Colors.green.withOpacity(0.06)
                                 : isRejected
-                                    ? Colors.red.withOpacity(0.05)
-                                    : AppDesign.background,
-                            borderRadius:
-                                BorderRadius.circular(14),
+                                ? Colors.red.withOpacity(0.05)
+                                : AppDesign.background,
+                            borderRadius: BorderRadius.circular(14),
                           ),
                           child: Text(
                             message,
-                            style:
-                                AppDesign.bodyStyle.copyWith(
-                              height: 1.6,
-                            ),
+                            style: AppDesign.bodyStyle.copyWith(height: 1.6),
                           ),
                         ),
                       ],
 
-                      if (isRejected &&
-                          rejectionReason.isNotEmpty) ...[
+                      if (isRejected && rejectionReason.isNotEmpty) ...[
                         const SizedBox(height: 10),
 
                         Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             color: AppDesign.background,
-                            borderRadius:
-                                BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'سبب الرفض',
-                                style:
-                                    AppDesign.bodyStyle.copyWith(
+                                style: AppDesign.bodyStyle.copyWith(
                                   color: AppDesign.primary,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: 5),
-                              Text(
-                                rejectionReason,
-                                style: AppDesign.bodyStyle,
-                              ),
+                              Text(rejectionReason, style: AppDesign.bodyStyle),
                             ],
                           ),
                         ),
@@ -526,20 +470,15 @@ Future<void> _showNoNotifications() async {
                         height: 48,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                AppDesign.primary,
-                            foregroundColor:
-                                AppDesign.white,
+                            backgroundColor: AppDesign.primary,
+                            foregroundColor: AppDesign.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
                           onPressed: () async {
-                            await _markNotificationAsRead(
-                              notification.id,
-                            );
+                            await _markNotificationAsRead(notification.id);
 
                             if (!dialogContext.mounted) return;
 
@@ -547,9 +486,7 @@ Future<void> _showNoNotifications() async {
                           },
                           child: const Text(
                             'حسنًا',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                            ),
+                            style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
                       ),
@@ -561,26 +498,13 @@ Future<void> _showNoNotifications() async {
           ),
         );
       },
-      transitionBuilder: (
-        context,
-        animation,
-        secondaryAnimation,
-        child,
-      ) {
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
         return SlideTransition(
           position: Tween<Offset>(
             begin: const Offset(0, -0.25),
             end: Offset.zero,
-          ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOut,
-            ),
-          ),
-          child: FadeTransition(
-            opacity: animation,
-            child: child,
-          ),
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+          child: FadeTransition(opacity: animation, child: child),
         );
       },
     );
@@ -590,72 +514,97 @@ Future<void> _showNoNotifications() async {
   // DONATION BOXES
   // ============================================================
 
-  Future<void> loadBoxes() async {
-    List<Map<String, dynamic>> allBoxes = [];
+  void _listenToItems() {
+    _itemsSub = FirebaseFirestore.instance
+        .collection('items')
+        .where('status', isEqualTo: 'available')
+        .snapshots()
+        .listen(
+          (snapshot) async {
+            try {
+              final db = FirebaseFirestore.instance;
 
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('donation_boxes')
-          .where('status', isEqualTo: 'available')
-          .get();
+              // نجيب فقط الصناديق اللي ما عندنا لها نسخة محفوظة
+              final newBoxIds = snapshot.docs
+                  .map((d) => (d.data()['boxId'] ?? '').toString())
+                  .where((id) => id.isNotEmpty && !_boxCache.containsKey(id))
+                  .toSet();
 
-      for (var doc in snapshot.docs) {
-        final d = doc.data();
+              await Future.wait(
+                newBoxIds.map((id) async {
+                  try {
+                    final snap = await db
+                        .collection('donation_boxes')
+                        .doc(id)
+                        .get();
+                    if (snap.exists && snap.data() != null) {
+                      _boxCache[id] = snap.data()!;
+                    }
+                  } catch (e) {
+                    debugPrint('BOX FETCH ERROR ($id): $e');
+                  }
+                }),
+              );
 
-        List<String> imagesList = [];
+              final List<Map<String, dynamic>> allItems = [];
 
-        final items = d['items'];
+              for (final doc in snapshot.docs) {
+                final data = doc.data();
+                final boxId = (data['boxId'] ?? '').toString();
+                final box = _boxCache[boxId];
 
-        if (items is List) {
-          for (var item in items) {
-            if (item is Map &&
-                item['imageUrl'] != null) {
-              final imageUrl =
-                  item['imageUrl'].toString().trim();
+                final gender = ((box?['gender'] ?? data['gender']) ?? 'الكل')
+                    .toString();
 
-              if (imageUrl.isNotEmpty) {
-                imagesList.add(imageUrl);
+                final rawAgeGroup = box?['ageGroup'] ?? data['ageGroup'];
+                String ageLabel = 'الكل';
+                if (rawAgeGroup is Map) {
+                  ageLabel = (rawAgeGroup['label'] ?? 'الكل').toString();
+                } else if (rawAgeGroup != null) {
+                  ageLabel = rawAgeGroup.toString();
+                }
+
+                String size = (data['size'] ?? '').toString().trim();
+                if (size.isEmpty || size == 'null') {
+                  size = (box?['generalSize'] ?? '').toString().trim();
+                  if (size == 'null') size = '';
+                }
+
+                final imageUrl = (data['imageUrl'] ?? '').toString().trim();
+
+                allItems.add({
+                  'itemId': doc.id,
+                  'boxId': boxId,
+                  'donationId': (data['donationId'] ?? '').toString(),
+                  'gender': gender,
+                  'age': ageLabel,
+                  'type': (data['type'] ?? 'قطعة ملابس').toString(),
+                  'size': size,
+                  'description': (data['description'] ?? '').toString(),
+                  'images': imageUrl.isNotEmpty ? [imageUrl] : <String>[],
+                });
               }
+
+              if (!mounted) return;
+              setState(() {
+                boxes = allItems;
+                isLoading = false;
+              });
+            } catch (e) {
+              debugPrint('ITEMS ERROR: $e');
+              if (!mounted) return;
+              setState(() => isLoading = false);
             }
-          }
-        }
-
-        String ageLabel = 'الكل';
-
-        final ageGroup = d['ageGroup'];
-
-        if (ageGroup is Map) {
-          ageLabel =
-              (ageGroup['label'] ?? 'الكل').toString();
-        } else if (ageGroup != null) {
-          ageLabel = ageGroup.toString();
-        }
-
-        allBoxes.add({
-          "boxId": doc.id,
-          "donationId": d['donationId'] ?? "",
-          "gender": (d['gender'] ?? 'الكل').toString(),
-          "age": ageLabel,
-          "images": imagesList,
-        });
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        boxes = allBoxes;
-        isLoading = false;
-      });
-    } catch (e) {
-      debugPrint("BOXES ERROR: $e");
-
-      if (!mounted) return;
-
-      setState(() {
-        boxes = [];
-        isLoading = false;
-      });
-    }
+          },
+          onError: (e) {
+            debugPrint('ITEMS STREAM ERROR: $e');
+            if (!mounted) return;
+            setState(() {
+              boxes = [];
+              isLoading = false;
+            });
+          },
+        );
   }
 
   // ============================================================
@@ -668,21 +617,16 @@ Future<void> _showNoNotifications() async {
 
   List<Map<String, dynamic>> get filteredBoxes {
     return boxes.where((box) {
-      final gender =
-          (box["gender"] ?? "الكل").toString();
+      final gender = (box["gender"] ?? "الكل").toString();
 
-      final age =
-          (box["age"] ?? "الكل").toString();
+      final age = (box["age"] ?? "الكل").toString();
 
       final genderOk =
           selectedGender == "الكل" ||
-              normalize(gender) ==
-                  normalize(selectedGender);
+          normalize(gender) == normalize(selectedGender);
 
       final ageOk =
-          selectedAge == "الكل" ||
-              normalize(age) ==
-                  normalize(selectedAge);
+          selectedAge == "الكل" || normalize(age) == normalize(selectedAge);
 
       return genderOk && ageOk;
     }).toList();
@@ -702,18 +646,11 @@ Future<void> _showNoNotifications() async {
       // ========================================================
       // BOTTOM NAVIGATION
       // ========================================================
-
       bottomNavigationBar: Container(
-        margin: const EdgeInsets.fromLTRB(
-          16,
-          0,
-          16,
-          14,
-        ),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
         decoration: BoxDecoration(
           color: AppDesign.white,
-          borderRadius:
-              BorderRadius.circular(AppDesign.radiusXL),
+          borderRadius: BorderRadius.circular(AppDesign.radiusXL),
           boxShadow: [
             BoxShadow(
               color: AppDesign.black.withOpacity(0.06),
@@ -729,117 +666,104 @@ Future<void> _showNoNotifications() async {
                   child: SizedBox(
                     width: 22,
                     height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                    ),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
               )
             : Directionality(
-          textDirection: TextDirection.rtl,
-          child: NavigationBar(
-            height: 78,
-            selectedIndex: _bottomNavIndex,
-            backgroundColor: Colors.transparent,
-            indicatorColor:
-                AppDesign.secondary.withOpacity(0.16),
-            surfaceTintColor: Colors.transparent,
-            labelBehavior:
-                NavigationDestinationLabelBehavior
-                    .alwaysShow,
-            onDestinationSelected: (index) {
-  final isApproved = beneficiaryStatus == 'approved';
+                textDirection: TextDirection.rtl,
+                child: NavigationBar(
+                  height: 78,
+                  selectedIndex: _bottomNavIndex,
+                  backgroundColor: Colors.transparent,
+                  indicatorColor: AppDesign.secondary.withOpacity(0.16),
+                  surfaceTintColor: Colors.transparent,
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                  onDestinationSelected: (index) {
+                    final isApproved = beneficiaryStatus == 'approved';
 
-  if (index == 0) {
-    setState(() => _bottomNavIndex = 0);
-    return;
-  }
+                    if (index == 0) {
+                      setState(() => _bottomNavIndex = 0);
+                      return;
+                    }
 
-  // إذا لم يكن المستفيد موافقًا عليه:
-  // الفهرس 1 يعني صفحة المزيد
-  if (!isApproved && index == 1) {
-    setState(() => _bottomNavIndex = 1);
+                    // إذا لم يكن المستفيد موافقًا عليه:
+                    // الفهرس 1 يعني صفحة المزيد
+                    if (!isApproved && index == 1) {
+                      setState(() => _bottomNavIndex = 1);
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BeneficiaryMorePage(
-          userId: widget.userId,
-        ),
-      ),
-    );
-    return;
-  }
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              BeneficiaryMorePage(userId: widget.userId),
+                        ),
+                      );
+                      return;
+                    }
 
-  // إذا كان المستفيد موافقًا عليه:
-  if (isApproved && index == 1) {
-    setState(() => _bottomNavIndex = 1);
+                    // إذا كان المستفيد موافقًا عليه:
+                    if (isApproved && index == 1) {
+                      setState(() => _bottomNavIndex = 1);
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BeneficiaryOrdersPage(
-          userId: widget.userId,
-        ),
-      ),
-    );
-    return;
-  }
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              BeneficiaryOrdersPage(userId: widget.userId),
+                        ),
+                      );
+                      return;
+                    }
 
-  // المزيد للمستفيد الموافق عليه، عند الفهرس 2
-  if (isApproved && index == 2) {
-    setState(() => _bottomNavIndex = 2);
+                    // المزيد للمستفيد الموافق عليه، عند الفهرس 2
+                    if (isApproved && index == 2) {
+                      setState(() => _bottomNavIndex = 2);
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BeneficiaryMorePage(
-          userId: widget.userId,
-        ),
-      ),
-    );
-  }
-},
-            destinations: [
-  const NavigationDestination(
-    icon: Icon(Icons.home_outlined),
-    selectedIcon: Icon(Icons.home_rounded),
-    label: 'الرئيسية',
-  ),
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              BeneficiaryMorePage(userId: widget.userId),
+                        ),
+                      );
+                    }
+                  },
+                  destinations: [
+                    const NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home_rounded),
+                      label: 'الرئيسية',
+                    ),
 
-  if (beneficiaryStatus == 'approved')
-    const NavigationDestination(
-      icon: Icon(Icons.volunteer_activism_outlined),
-      selectedIcon: Icon(Icons.volunteer_activism_rounded),
-      label: 'طلباتي',
-    ),
+                    if (beneficiaryStatus == 'approved')
+                      const NavigationDestination(
+                        icon: Icon(Icons.volunteer_activism_outlined),
+                        selectedIcon: Icon(Icons.volunteer_activism_rounded),
+                        label: 'طلباتي',
+                      ),
 
-  const NavigationDestination(
-    icon: Icon(Icons.more_horiz),
-    selectedIcon: Icon(Icons.more_horiz),
-    label: 'المزيد',
-  ),
-],
-          ),
-        ),
+                    const NavigationDestination(
+                      icon: Icon(Icons.more_horiz),
+                      selectedIcon: Icon(Icons.more_horiz),
+                      label: 'المزيد',
+                    ),
+                  ],
+                ),
+              ),
       ),
 
       // ========================================================
       // BODY
       // ========================================================
-
       body: SafeArea(
         child: Column(
           children: [
             // ==================================================
             // HEADER
             // ==================================================
-
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Directionality(
                 textDirection: TextDirection.rtl,
                 child: Row(
@@ -847,19 +771,14 @@ Future<void> _showNoNotifications() async {
                     // ==========================================
                     // USER
                     // ==========================================
-
                     CircleAvatar(
                       radius: 24,
-                      backgroundColor:
-                          AppDesign.primary,
+                      backgroundColor: AppDesign.primary,
                       child: Text(
-                        firstName.isNotEmpty
-                            ? firstName[0]
-                            : 'م',
+                        firstName.isNotEmpty ? firstName[0] : 'م',
                         style: const TextStyle(
                           color: AppDesign.white,
-                          fontWeight:
-                              FontWeight.w800,
+                          fontWeight: FontWeight.w800,
                           fontSize: 20,
                         ),
                       ),
@@ -869,30 +788,24 @@ Future<void> _showNoNotifications() async {
 
                     Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'مرحبًا',
-                            style:
-                                AppDesign.bodyStyle.copyWith(
+                            style: AppDesign.bodyStyle.copyWith(
                               color: AppDesign.primary,
-                              fontWeight:
-                                  FontWeight.w600,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             "$firstName $lastName",
                             maxLines: 1,
-                            overflow:
-                                TextOverflow.ellipsis,
-                            style:
-                                AppDesign.h1Style.copyWith(
+                            overflow: TextOverflow.ellipsis,
+                            style: AppDesign.h1Style.copyWith(
                               color: AppDesign.primary,
                               fontSize: 24,
-                              fontWeight:
-                                  FontWeight.w800,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ],
@@ -904,45 +817,34 @@ Future<void> _showNoNotifications() async {
                     // ==========================================
                     // NOTIFICATIONS
                     // ==========================================
-
-                    StreamBuilder<
-                        QuerySnapshot<
-                            Map<String, dynamic>>>(
+                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                       stream: _notificationsStream(),
-                      builder: (
-                        context,
-                        notificationSnapshot,
-                      ) {
-                        final unread =
-                            _getUnreadNotifications(
+                      builder: (context, notificationSnapshot) {
+                        final unread = _getUnreadNotifications(
                           notificationSnapshot.data,
                         );
 
-                        final unreadCount =
-                            unread.length;
+                        final unreadCount = unread.length;
 
-                        final latestNotification =
-                            unread.isNotEmpty
-                                ? unread.first
-                                : null;
+                        final latestNotification = unread.isNotEmpty
+                            ? unread.first
+                            : null;
 
                         return IconButton(
                           tooltip: 'الإشعارات',
-                         onPressed: () {
-  if (latestNotification == null) {
-    _showNoNotifications();
-  } else {
-    _showNotification(latestNotification);
-  }
-},
+                          onPressed: () {
+                            if (latestNotification == null) {
+                              _showNoNotifications();
+                            } else {
+                              _showNotification(latestNotification);
+                            }
+                          },
                           icon: Stack(
                             clipBehavior: Clip.none,
                             children: [
                               const Icon(
-                                Icons
-                                    .notifications_none_rounded,
-                                color:
-                                    AppDesign.primary,
+                                Icons.notifications_none_rounded,
+                                color: AppDesign.primary,
                                 size: 28,
                               ),
 
@@ -951,51 +853,31 @@ Future<void> _showNoNotifications() async {
                                   top: -8,
                                   right: -8,
                                   child: Container(
-                                    constraints:
-                                        const BoxConstraints(
+                                    constraints: const BoxConstraints(
                                       minWidth: 20,
                                       minHeight: 20,
                                     ),
-                                    padding:
-                                        const EdgeInsets
-                                            .symmetric(
+                                    padding: const EdgeInsets.symmetric(
                                       horizontal: 5,
                                       vertical: 2,
                                     ),
-                                    alignment:
-                                        Alignment.center,
-                                    decoration:
-                                        BoxDecoration(
-                                      color:
-                                          const Color(
-                                        0xFFD84A4A,
-                                      ),
-                                      borderRadius:
-                                          BorderRadius
-                                              .circular(
-                                        20,
-                                      ),
-                                      border:
-                                          Border.all(
-                                        color:
-                                            AppDesign
-                                                .background,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFD84A4A),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: AppDesign.background,
                                         width: 2,
                                       ),
                                     ),
                                     child: Text(
                                       unreadCount > 9
                                           ? '9+'
-                                          : unreadCount
-                                              .toString(),
-                                      style:
-                                          const TextStyle(
-                                        color:
-                                            Colors.white,
+                                          : unreadCount.toString(),
+                                      style: const TextStyle(
+                                        color: Colors.white,
                                         fontSize: 10,
-                                        fontWeight:
-                                            FontWeight
-                                                .bold,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ),
@@ -1009,65 +891,39 @@ Future<void> _showNoNotifications() async {
                     // ==========================================
                     // CART
                     // ==========================================
-
                     StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore
-                          .instance
+                      stream: FirebaseFirestore.instance
                           .collection('cart')
-                          .where(
-                            'beneficiaryId',
-                            isEqualTo:
-                                widget.userId,
-                          )
-                          .where(
-                            'status',
-                            isEqualTo: 'in_cart',
-                          )
+                          .where('beneficiaryId', isEqualTo: widget.userId)
+                          .where('status', isEqualTo: 'in_cart')
                           .snapshots(),
-                      builder: (
-                        context,
-                        cartSnapshot,
-                      ) {
+                      builder: (context, cartSnapshot) {
                         if (!cartSnapshot.hasData) {
                           return IconButton(
                             icon: Icon(
-                              Icons
-                                  .shopping_cart_outlined,
-                              color:
-                                  Colors.grey.shade700,
+                              Icons.shopping_cart_outlined,
+                              color: Colors.grey.shade700,
                               size: 28,
                             ),
                             onPressed: _openCartIfApproved,
                           );
                         }
 
-                        final cartDocs =
-                            cartSnapshot.data!.docs;
+                        final cartDocs = cartSnapshot.data!.docs;
 
                         return FutureBuilder<int>(
-                          future:
-                              _countAvailableCartItems(
-                            cartDocs,
-                          ),
-                          builder: (
-                            context,
-                            countSnapshot,
-                          ) {
-                            final count =
-                                countSnapshot.data ??
-                                    0;
+                          future: _countAvailableCartItems(cartDocs),
+                          builder: (context, countSnapshot) {
+                            final count = countSnapshot.data ?? 0;
 
                             return IconButton(
                               onPressed: _openCartIfApproved,
                               icon: Stack(
-                                clipBehavior:
-                                    Clip.none,
+                                clipBehavior: Clip.none,
                                 children: [
                                   Icon(
-                                    Icons
-                                        .shopping_cart_outlined,
-                                    color: Colors
-                                        .grey.shade700,
+                                    Icons.shopping_cart_outlined,
+                                    color: Colors.grey.shade700,
                                     size: 28,
                                   ),
 
@@ -1076,51 +932,31 @@ Future<void> _showNoNotifications() async {
                                       top: -7,
                                       right: -7,
                                       child: Container(
-                                        constraints:
-                                            const BoxConstraints(
+                                        constraints: const BoxConstraints(
                                           minWidth: 20,
                                           minHeight: 20,
                                         ),
-                                        padding:
-                                            const EdgeInsets
-                                                .symmetric(
+                                        padding: const EdgeInsets.symmetric(
                                           horizontal: 5,
                                           vertical: 2,
                                         ),
-                                        alignment:
-                                            Alignment
-                                                .center,
-                                        decoration:
-                                            BoxDecoration(
-                                          color:
-                                              AppDesign
-                                                  .primary,
-                                          borderRadius:
-                                              BorderRadius
-                                                  .circular(
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: AppDesign.primary,
+                                          borderRadius: BorderRadius.circular(
                                             20,
                                           ),
-                                          border:
-                                              Border.all(
-                                            color:
-                                                AppDesign
-                                                    .background,
+                                          border: Border.all(
+                                            color: AppDesign.background,
                                             width: 2,
                                           ),
                                         ),
                                         child: Text(
-                                          count > 9
-                                              ? '9+'
-                                              : count
-                                                  .toString(),
-                                          style:
-                                              const TextStyle(
-                                            color:
-                                                Colors.white,
+                                          count > 9 ? '9+' : count.toString(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
                                             fontSize: 10,
-                                            fontWeight:
-                                                FontWeight
-                                                    .bold,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                       ),
@@ -1140,46 +976,37 @@ Future<void> _showNoNotifications() async {
             // ==================================================
             // BANNER
             // ==================================================
-
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  borderRadius:
-                      BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(22),
                   gradient: LinearGradient(
                     colors: [
                       AppDesign.primary,
-                      AppDesign.primary
-                          .withOpacity(0.8),
+                      AppDesign.primary.withOpacity(0.8),
                     ],
                   ),
                 ),
                 child: const Directionality(
                   textDirection: TextDirection.rtl,
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         "مع مَدَد يمكنك الحصول على التبرعات المناسبة ",
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 18,
-                          fontWeight:
-                              FontWeight.bold,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                       SizedBox(height: 8),
                       Text(
                         "تصفح القطع واختر ما يناسبك بسهولة وسرعة",
-                        style: TextStyle(
-                          color: Colors.white70,
-                        ),
+                        style: TextStyle(color: Colors.white70),
                       ),
                     ],
                   ),
@@ -1192,11 +1019,8 @@ Future<void> _showNoNotifications() async {
             // ==================================================
             // FILTER TITLE
             // ==================================================
-
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Text(
@@ -1214,7 +1038,6 @@ Future<void> _showNoNotifications() async {
             // ==================================================
             // FILTERS
             // ==================================================
-
             _buildFilters(),
 
             const SizedBox(height: 10),
@@ -1222,61 +1045,40 @@ Future<void> _showNoNotifications() async {
             // ==================================================
             // BOXES
             // ==================================================
-
             Expanded(
               child: isLoading
-                  ? const Center(
-                      child:
-                          CircularProgressIndicator(),
-                    )
+                  ? const Center(child: CircularProgressIndicator())
                   : filtered.isEmpty
-                      ? const Center(
-                          child: Text(
-                            "لا توجد تبرعات",
-                          ),
-                        )
-                      : Directionality(
-                          textDirection:
-                              TextDirection.rtl,
-                          child: GridView.builder(
-                            padding:
-                                const EdgeInsets.all(
-                              10,
-                            ),
-                            itemCount:
-                                filtered.length,
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
+                  ? const Center(child: Text("لا توجد تبرعات"))
+                  : Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: GridView.builder(
+                        padding: const EdgeInsets.all(10),
+                        itemCount: filtered.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 2,
-                              childAspectRatio:
-                                  0.75,
+                              childAspectRatio: 0.75,
                             ),
-                            itemBuilder: (
-                              context,
-                              index,
-                            ) {
-                              final box =
-                                  filtered[index];
+                        itemBuilder: (context, index) {
+                          final box = filtered[index];
 
-                              return Align(
-                                alignment:
-                                    Alignment.topRight,
-                                child:
-                                    ClothesBoxCard(
-                                  images:
-                                      box["images"],
-                                  gender:
-                                      box["gender"],
-                                  age: box["age"],
-                                  userId:
-                                      widget.userId,
-                                  boxId:
-                                      box["boxId"],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
+                          return Align(
+                            alignment: Alignment.topRight,
+                            child: ClothesBoxCard(
+                              images: box["images"] as List,
+                              gender: box["gender"].toString(),
+                              age: box["age"].toString(),
+                              type: box["type"].toString(),
+                              size: box["size"].toString(),
+                              userId: widget.userId,
+                              itemId: box["itemId"].toString(),
+                              boxId: box["boxId"].toString(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
             ),
           ],
         ),
@@ -1289,11 +1091,7 @@ Future<void> _showNoNotifications() async {
   // ============================================================
 
   Widget _buildFilters() {
-    List<String> genders = [
-      "الكل",
-      "ذكر",
-      "أنثى",
-    ];
+    List<String> genders = ["الكل", "ذكر", "أنثى"];
 
     List<String> ages = [
       "الكل",
@@ -1305,8 +1103,7 @@ Future<void> _showNoNotifications() async {
     ];
 
     return Padding(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
           Expanded(
@@ -1316,9 +1113,7 @@ Future<void> _showNoNotifications() async {
               icon: Icons.person,
               items: genders,
               onSelected: (value) {
-                setState(
-                  () => selectedGender = value,
-                );
+                setState(() => selectedGender = value);
               },
             ),
           ),
@@ -1332,9 +1127,7 @@ Future<void> _showNoNotifications() async {
               icon: Icons.cake,
               items: ages,
               onSelected: (value) {
-                setState(
-                  () => selectedAge = value,
-                );
+                setState(() => selectedAge = value);
               },
             ),
           ),
@@ -1357,49 +1150,33 @@ Widget _filterCard({
 }) {
   return PopupMenuButton<String>(
     onSelected: onSelected,
-    itemBuilder: (context) => items
-        .map(
-          (e) => PopupMenuItem(
-            value: e,
-            child: Text(e),
-          ),
-        )
-        .toList(),
+    itemBuilder: (context) =>
+        items.map((e) => PopupMenuItem(value: e, child: Text(e))).toList(),
     child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
         ],
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Row(
-            mainAxisAlignment:
-                MainAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
               Text(
                 title,
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey.shade700,
-                  fontWeight:
-                      FontWeight.w600,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(width: 6),
-              Icon(
-                icon,
-                size: 18,
-                color: AppDesign.primary,
-              ),
+              Icon(icon, size: 18, color: AppDesign.primary),
             ],
           ),
 
@@ -1433,36 +1210,34 @@ Future<int> _countAvailableCartItems(
 
   for (final cartDoc in cartDocs) {
     try {
-      final cartData =
-          cartDoc.data() as Map<String, dynamic>;
+      final cartData = cartDoc.data() as Map<String, dynamic>;
 
-      final boxId =
-          cartData['boxId']?.toString();
+      final itemId = cartData['itemId']?.toString();
 
-      if (boxId == null || boxId.isEmpty) {
+      if (itemId == null || itemId.isEmpty) {
+        // التوافق مع عناصر السلة القديمة التي كانت تستخدم boxId.
+        final boxId = cartData['boxId']?.toString();
+        if (boxId == null || boxId.isEmpty) continue;
+        final oldBox = await FirebaseFirestore.instance
+            .collection('donation_boxes')
+            .doc(boxId)
+            .get();
+        if (oldBox.exists && oldBox.data()?['status'] == 'available') {
+          count++;
+        }
         continue;
       }
 
-      final boxDoc =
-          await FirebaseFirestore.instance
-              .collection('donation_boxes')
-              .doc(boxId)
-              .get();
+      final itemDoc = await FirebaseFirestore.instance
+          .collection('items')
+          .doc(itemId)
+          .get();
 
-      if (!boxDoc.exists) continue;
-
-      final boxData = boxDoc.data()!;
-
-      final boxStatus =
-          boxData['status']?.toString();
-
-      if (boxStatus == 'available') {
+      if (itemDoc.exists && itemDoc.data()?['status'] == 'available') {
         count++;
       }
     } catch (e) {
-      debugPrint(
-        "CART COUNT ERROR: $e",
-      );
+      debugPrint("CART COUNT ERROR: $e");
     }
   }
 
@@ -1478,7 +1253,10 @@ class ClothesBoxCard extends StatelessWidget {
   final String gender;
   final String age;
   final String userId;
+  final String itemId;
   final String boxId;
+  final String type;
+  final String size;
 
   const ClothesBoxCard({
     super.key,
@@ -1486,7 +1264,10 @@ class ClothesBoxCard extends StatelessWidget {
     required this.gender,
     required this.age,
     required this.userId,
+    required this.itemId,
     required this.boxId,
+    required this.type,
+    required this.size,
   });
 
   @override
@@ -1498,8 +1279,7 @@ class ClothesBoxCard extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius:
-                BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
             children: [
@@ -1510,37 +1290,25 @@ class ClothesBoxCard extends StatelessWidget {
                         color: AppDesign.background,
                         child: const Center(
                           child: Icon(
-                            Icons
-                                .checkroom_outlined,
+                            Icons.checkroom_outlined,
                             size: 42,
-                            color:
-                                AppDesign.secondary,
+                            color: AppDesign.secondary,
                           ),
                         ),
                       )
                     : PageView.builder(
                         itemCount: images.length,
-                        itemBuilder: (
-                          context,
-                          i,
-                        ) {
-                          final imageUrl =
-                              images[i]
-                                  .toString()
-                                  .trim();
+                        itemBuilder: (context, i) {
+                          final imageUrl = images[i].toString().trim();
 
                           if (imageUrl.isEmpty) {
                             return Container(
-                              color: AppDesign
-                                  .background,
-                              child:
-                                  const Center(
+                              color: AppDesign.background,
+                              child: const Center(
                                 child: Icon(
-                                  Icons
-                                      .broken_image_outlined,
+                                  Icons.broken_image_outlined,
                                   size: 40,
-                                  color:
-                                      Colors.grey,
+                                  color: Colors.grey,
                                 ),
                               ),
                             );
@@ -1549,24 +1317,15 @@ class ClothesBoxCard extends StatelessWidget {
                           return Image.network(
                             imageUrl,
                             fit: BoxFit.cover,
-                            width:
-                                double.infinity,
-                            errorBuilder: (
-                              context,
-                              error,
-                              stackTrace,
-                            ) {
+                            width: double.infinity,
+                            errorBuilder: (context, error, stackTrace) {
                               return Container(
-                                color: AppDesign
-                                    .background,
-                                child:
-                                    const Center(
+                                color: AppDesign.background,
+                                child: const Center(
                                   child: Icon(
-                                    Icons
-                                        .broken_image_outlined,
+                                    Icons.broken_image_outlined,
                                     size: 40,
-                                    color:
-                                        Colors.grey,
+                                    color: Colors.grey,
                                   ),
                                 ),
                               );
@@ -1577,42 +1336,51 @@ class ClothesBoxCard extends StatelessWidget {
               ),
 
               Padding(
-                padding:
-                    const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(8),
                 child: Column(
                   children: [
                     Text(
+                      type,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    if (size.trim().isNotEmpty)
+                      Text(
+                        'المقاس: $size',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    Text(
                       age,
                       maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
                     ),
 
                     const SizedBox(height: 6),
 
                     ElevatedButton(
-                      style:
-                          ElevatedButton.styleFrom(
-                        backgroundColor:
-                            AppDesign.primary,
-                        foregroundColor:
-                            Colors.white,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppDesign.primary,
+                        foregroundColor: Colors.white,
                       ),
                       onPressed: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                BeneficiaryViewDonationPage(
+                            builder: (_) => BeneficiaryViewDonationPage(
+                              itemId: itemId,
                               boxId: boxId,
                               userId: userId,
                             ),
                           ),
                         );
                       },
-                      child: const Text(
-                        "عرض التفاصيل",
-                      ),
+                      child: const Text("عرض التفاصيل"),
                     ),
                   ],
                 ),
@@ -1627,23 +1395,18 @@ class ClothesBoxCard extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color:
-                  Colors.white.withOpacity(0.9),
-              borderRadius:
-                  BorderRadius.circular(14),
+              color: Colors.white.withOpacity(0.9),
+              borderRadius: BorderRadius.circular(14),
               boxShadow: const [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 4,
-                ),
+                BoxShadow(color: Colors.black12, blurRadius: 4),
               ],
             ),
             child: Icon(
               gender == "أنثى"
                   ? Icons.woman_2
                   : gender == "ذكر"
-                      ? Icons.man
-                      : Icons.person,
+                  ? Icons.man
+                  : Icons.person,
               size: 22,
               color: Colors.grey,
             ),
