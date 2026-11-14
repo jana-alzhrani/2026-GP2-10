@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -10,70 +8,162 @@ import 'beneficiary_delivery_method_page.dart';
 class BeneficiaryCartPage extends StatefulWidget {
   final String userId;
 
-  const BeneficiaryCartPage({
-    super.key,
-    required this.userId,
-  });
+  const BeneficiaryCartPage({super.key, required this.userId});
 
   @override
-  State<BeneficiaryCartPage> createState() =>
-      _BeneficiaryCartPageState();
+  State<BeneficiaryCartPage> createState() => _BeneficiaryCartPageState();
 }
 
-class _BeneficiaryCartPageState
-    extends State<BeneficiaryCartPage> {
+class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
+  // ============================================================
+  // ACTIONS
+  // ============================================================
 
-  bool _isDeleting = false;
+  Future<void> _deleteFromCart(String cartDocId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('cart')
+          .doc(cartDocId)
+          .delete();
 
- Future<void> _deleteFromCart(String cartDocId) async {
-  try {
-    await FirebaseFirestore.instance
-        .collection('cart')
-        .doc(cartDocId)
-        .delete();
-
-    if (!mounted) return;
-
-    AppDesign.showSuccessSnackBar(
-      context,
-      'تمت إزالة الصندوق من السلة',
-    );
-  } catch (e) {
-    if (!mounted) return;
-
-    AppDesign.showErrorSnackBar(
-      context,
-      'تعذر إزالة الصندوق من السلة',
-    );
+      if (!mounted) return;
+      AppDesign.showSuccessSnackBar(context, 'تمت إزالة القطعة من السلة');
+    } catch (e) {
+      if (!mounted) return;
+      AppDesign.showErrorSnackBar(context, 'تعذر إزالة القطعة من السلة');
+    }
   }
 
-}Future<void> _goToDeliveryMethod(
-  List<Map<String, dynamic>> availableItems,
-) async {
-  if (availableItems.isEmpty ) return;
+  Future<void> _confirmAndDelete(String cartDocId) async {
+    final confirm = await AppDesign.showAppDialog(
+      context: context,
+      title: 'إزالة القطعة',
+      message: 'هل أنت متأكد من إزالة هذه القطعة من السلة؟',
+      confirmText: 'إزالة',
+      cancelText: 'إلغاء',
+    );
 
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => BeneficiaryDeliveryMethodPage(
-        userId: widget.userId,
-        cartItems: availableItems,
-      ),
-    ),
-  );
-}
-  Future<Map<String, dynamic>?> _getBoxData(
-    String boxId,
+    if (!confirm) return;
+
+    await _deleteFromCart(cartDocId);
+  }
+
+  Future<void> _goToDeliveryMethod(
+    List<Map<String, dynamic>> availableItems,
   ) async {
-    final doc = await FirebaseFirestore.instance
-        .collection('donation_boxes')
-        .doc(boxId)
-        .get();
+    if (availableItems.isEmpty) return;
 
-    if (!doc.exists) return null;
-
-    return doc.data();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BeneficiaryDeliveryMethodPage(
+          userId: widget.userId,
+          cartItems: availableItems,
+        ),
+      ),
+    );
   }
+
+  // ============================================================
+  // DATA
+  // ============================================================
+
+  Future<List<Map<String, dynamic>>> _loadCartItems(
+    List<QueryDocumentSnapshot> cartDocs,
+  ) async {
+    final List<Map<String, dynamic>> result = [];
+
+    for (final cartDoc in cartDocs) {
+      final cart = cartDoc.data() as Map<String, dynamic>;
+
+      final itemId = (cart['itemId'] ?? '').toString();
+      final boxId = (cart['boxId'] ?? '').toString();
+
+      // Old cart entries (boxId only) can't be resolved to an item.
+      // Show them as unavailable so the user can remove them.
+      if (itemId.isEmpty) {
+        result.add({
+          'cartDocId': cartDoc.id,
+          'itemId': '',
+          'boxId': boxId,
+          'isAvailable': false,
+          'item': <String, dynamic>{},
+          'box': <String, dynamic>{},
+        });
+        continue;
+      }
+
+      try {
+        final itemSnap = await FirebaseFirestore.instance
+            .collection('items')
+            .doc(itemId)
+            .get();
+
+        final data = itemSnap.data();
+        final isAvailable = itemSnap.exists && data?['status'] == 'available';
+
+        // Live data if the item still exists, otherwise the snapshot
+        // that was saved in the cart document.
+        final Map<String, dynamic> itemData = Map<String, dynamic>.from(
+          data ?? cart,
+        );
+
+        final bId = (itemData['boxId'] ?? boxId).toString();
+
+        final missing =
+            (itemData['gender'] ?? '').toString().trim().isEmpty ||
+            itemData['ageGroup'] == null ||
+            (itemData['size'] ?? '').toString().trim().isEmpty;
+
+        if (missing && bId.isNotEmpty) {
+          final boxSnap = await FirebaseFirestore.instance
+              .collection('donation_boxes')
+              .doc(bId)
+              .get();
+          final box = boxSnap.data();
+
+          if (box != null) {
+            if ((itemData['gender'] ?? '').toString().trim().isEmpty) {
+              itemData['gender'] = box['gender'];
+            }
+            if (itemData['ageGroup'] == null) {
+              itemData['ageGroup'] = box['ageGroup'];
+            }
+            if ((itemData['size'] ?? '').toString().trim().isEmpty) {
+              itemData['size'] = box['generalSize'];
+            }
+          }
+        }
+
+        result.add({
+          'cartDocId': cartDoc.id,
+          'itemId': itemId,
+          'boxId': (itemData['boxId'] ?? boxId).toString(),
+          'isAvailable': isAvailable,
+          'item': itemData,
+          // kept so the delivery page can still read 'box' if it expects it
+          'box': itemData,
+        });
+      } catch (e) {
+        debugPrint('CART ITEM ERROR: $e');
+      }
+    }
+
+    result.sort((a, b) {
+      final aAvailable = a['isAvailable'] == true;
+      final bAvailable = b['isAvailable'] == true;
+
+      if (aAvailable && !bAvailable) return -1;
+      if (!aAvailable && bAvailable) return 1;
+      return 0;
+    });
+
+    return result;
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +171,6 @@ class _BeneficiaryCartPageState
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: AppDesign.background,
-
         appBar: AppBar(
           title: Text(
             'السلة',
@@ -95,27 +184,15 @@ class _BeneficiaryCartPageState
           foregroundColor: AppDesign.textPrimary,
           elevation: 0,
         ),
-
         body: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('cart')
-              .where(
-                'beneficiaryId',
-                isEqualTo: widget.userId,
-              )
-              .where(
-                'status',
-                isEqualTo: 'in_cart',
-              )
+              .where('beneficiaryId', isEqualTo: widget.userId)
+              .where('status', isEqualTo: 'in_cart')
               .snapshots(),
-
           builder: (context, snapshot) {
-
-            if (snapshot.connectionState ==
-                ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(),
-              );
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
             }
 
             if (snapshot.hasError) {
@@ -130,92 +207,53 @@ class _BeneficiaryCartPageState
               );
             }
 
-            final cartDocs =
-                snapshot.data?.docs ?? [];
+            final cartDocs = snapshot.data?.docs ?? [];
 
             if (cartDocs.isEmpty) {
               return _buildEmptyCart();
             }
 
-            return FutureBuilder<
-                List<Map<String, dynamic>>>(
+            return FutureBuilder<List<Map<String, dynamic>>>(
               future: _loadCartItems(cartDocs),
               builder: (context, cartSnapshot) {
-
-                if (cartSnapshot.connectionState ==
-                    ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
+                if (cartSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
                 }
 
-                final items =
-                    cartSnapshot.data ?? [];
+                final items = cartSnapshot.data ?? [];
 
                 final availableItems = items
-                    .where((item) =>
-                        item['isAvailable'] == true)
+                    .where((c) => c['isAvailable'] == true)
                     .toList();
 
                 final unavailableItems = items
-                    .where((item) =>
-                        item['isAvailable'] == false)
+                    .where((c) => c['isAvailable'] == false)
                     .toList();
 
                 return Column(
                   children: [
-
                     Expanded(
                       child: ListView(
-                        padding:
-                            const EdgeInsets.fromLTRB(
-                          16,
-                          10,
-                          16,
-                          20,
-                        ),
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
                         children: [
-
                           if (availableItems.isNotEmpty) ...[
-                            _buildSectionTitle(
-                              'الصناديق المتاحة',
-                            ),
-
+                            _buildSectionTitle('القطع المتاحة'),
                             const SizedBox(height: 10),
-
-                            ...availableItems.map(
-                              (item) =>
-                                  _buildCartCard(item),
-                            ),
+                            ...availableItems.map((c) => _buildCartCard(c)),
                           ],
-
                           if (unavailableItems.isNotEmpty) ...[
                             const SizedBox(height: 18),
-
-                            _buildSectionTitle(
-                              'الصناديق غير المتاحة',
-                            ),
-
+                            _buildSectionTitle('القطع غير المتاحة'),
                             const SizedBox(height: 10),
-
-                            ...unavailableItems.map(
-                              (item) =>
-                                  _buildCartCard(item),
-                            ),
+                            ...unavailableItems.map((c) => _buildCartCard(c)),
                           ],
                         ],
                       ),
                     ),
-
                     _buildBottomButton(
-                      hasUnavailable:
-                          unavailableItems.isNotEmpty,
-                      hasAvailable:
-                          availableItems.isNotEmpty,
-
-                      availableItems:
-                          availableItems,
-                      
+                      hasUnavailable: unavailableItems.isNotEmpty,
+                      hasAvailable: availableItems.isNotEmpty,
+                      availableItems: availableItems,
                     ),
                   ],
                 );
@@ -227,68 +265,9 @@ class _BeneficiaryCartPageState
     );
   }
 
-  Future<List<Map<String, dynamic>>> _loadCartItems(
-    List<QueryDocumentSnapshot> cartDocs,
-  ) async {
-
-    final List<Map<String, dynamic>> result = [];
-
-    for (final cartDoc in cartDocs) {
-
-      final cartData =
-          cartDoc.data() as Map<String, dynamic>;
-
-      final boxId =
-          cartData['boxId']?.toString() ?? '';
-
-      if (boxId.isEmpty) continue;
-
-      final boxData =
-          await _getBoxData(boxId);
-
-      if (boxData == null) {
-        result.add({
-          'cartDocId': cartDoc.id,
-          'boxId': boxId,
-          'isAvailable': false,
-          'box': <String, dynamic>{},
-        });
-
-        continue;
-      }
-
-      final status =
-          boxData['status']?.toString() ?? '';
-
-      result.add({
-        'cartDocId': cartDoc.id,
-        'boxId': boxId,
-        'isAvailable': status == 'available',
-        'box': boxData,
-      });
-    }
-
-    result.sort((a, b) {
-
-      final aAvailable =
-          a['isAvailable'] == true;
-
-      final bAvailable =
-          b['isAvailable'] == true;
-
-      if (aAvailable && !bAvailable) {
-        return -1;
-      }
-
-      if (!aAvailable && bAvailable) {
-        return 1;
-      }
-
-      return 0;
-    });
-
-    return result;
-  }
+  // ============================================================
+  // WIDGETS
+  // ============================================================
 
   Widget _buildSectionTitle(String title) {
     return Align(
@@ -304,58 +283,34 @@ class _BeneficiaryCartPageState
     );
   }
 
-  Widget _buildCartCard(
-    Map<String, dynamic> item,
-  ) {
+  Widget _buildCartCard(Map<String, dynamic> card) {
+    final bool isAvailable = card['isAvailable'] == true;
+    final item = card['item'] as Map<String, dynamic>;
 
-    final bool isAvailable =
-        item['isAvailable'] == true;
+    final cartDocId = card['cartDocId'].toString();
+    final itemId = card['itemId'].toString();
+    final boxId = card['boxId'].toString();
 
-    final box =
-        item['box'] as Map<String, dynamic>;
+    final type = (item['type'] ?? 'قطعة ملابس').toString();
+    final gender = (item['gender'] ?? '-').toString();
 
-    final cartDocId =
-        item['cartDocId'].toString();
+    final rawAge = item['ageGroup'];
+    final ageGroup = rawAge is Map
+        ? (rawAge['label'] ?? '-').toString()
+        : (rawAge ?? '-').toString();
 
-    final boxId =
-         item['boxId'].toString();
-
-    final gender =
-        (box['gender'] ?? '-').toString();
-
-    final ageGroup =
-        (box['ageGroup']?['label'] ?? '-')
-            .toString();
-
-    final generalSize =
-        (box['generalSize'] ?? '').toString();
-
-    final items = box['items'];
-
-    final int numberOfItems =
-        items is List ? items.length : 0;
-
-    final List images = [];
-
-    if (items is List) {
-  for (final item in items) {
-    if (item is Map &&
-        item['imageUrl'] != null &&
-        item['imageUrl'].toString().isNotEmpty) {
-      images.add(
-        item['imageUrl'].toString(),
-      );
-    }
-  }
-}
+    final size = (item['size'] ?? '').toString();
+    final imageUrl = (item['imageUrl'] ?? '').toString();
+    final List images = imageUrl.isNotEmpty ? [imageUrl] : [];
 
     return GestureDetector(
-      onTap: isAvailable
+      onTap: isAvailable && itemId.isNotEmpty
           ? () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => BeneficiaryViewDonationPage(
+                    itemId: itemId,
                     boxId: boxId,
                     userId: widget.userId,
                   ),
@@ -365,242 +320,149 @@ class _BeneficiaryCartPageState
           : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: isAvailable
-            ? AppDesign.white
-            : Colors.grey.shade100,
-        borderRadius:
-            BorderRadius.circular(
-          AppDesign.radiusXL,
-        ),
-        border: Border.all(
-          color: isAvailable
-              ? AppDesign.border
-              : Colors.grey.shade300,
-        ),
-        boxShadow: [
-          if (isAvailable)
-            BoxShadow(
-              color: AppDesign.black
-                  .withOpacity(0.05),
-              blurRadius: 12,
-              offset: const Offset(0, 5),
-            ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-
-            if (!isAvailable)
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.all(12),
-                margin:
-                    const EdgeInsets.only(
-                  bottom: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius:
-                      BorderRadius.circular(14),
-                ),
-                child: Text(
-                  'هذا الصندوق وجد طريقه إلى مستفيد آخر. يرجى إزالته من السلة للمتابعة',
-                  textAlign: TextAlign.center,
-                  style:
-                      AppDesign.bodyStyle.copyWith(
-                    color: Colors.grey.shade700,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    height: 1.5,
-                  ),
-                ),
+        decoration: BoxDecoration(
+          color: isAvailable ? AppDesign.white : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(AppDesign.radiusXL),
+          border: Border.all(
+            color: isAvailable ? AppDesign.border : Colors.grey.shade300,
+          ),
+          boxShadow: [
+            if (isAvailable)
+              BoxShadow(
+                color: AppDesign.black.withOpacity(0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
               ),
-
-            Row(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-
-                _buildImagePreview(
-                  images,
-                  isAvailable,
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            children: [
+              if (!isAvailable)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    'هذه القطعة وجدت طريقها إلى مستفيد آخر. يرجى إزالتها من السلة للمتابعة',
+                    textAlign: TextAlign.center,
+                    style: AppDesign.bodyStyle.copyWith(
+                      color: Colors.grey.shade700,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.5,
+                    ),
+                  ),
                 ),
-
-                const SizedBox(width: 12),
-
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-
-                      Text(
-                        'صندوق تبرع',
-                        style:
-                            AppDesign.subtitleStyle
-                                .copyWith(
-                          color: isAvailable
-                              ? AppDesign.textPrimary
-                              : Colors.grey.shade600,
-                          fontWeight:
-                              FontWeight.w800,
-                          fontSize: 17,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildImagePreview(images, isAvailable),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          type,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppDesign.subtitleStyle.copyWith(
+                            color: isAvailable
+                                ? AppDesign.textPrimary
+                                : Colors.grey.shade600,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 17,
+                          ),
                         ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      _buildInfoText(
-                        'الجنس',
-                        gender,
-                        isAvailable,
-                      ),
-
-                      const SizedBox(height: 5),
-
-                      _buildInfoText(
-                        'الفئة العمرية',
-                        ageGroup,
-                        isAvailable,
-                      ),
-
-                      if (generalSize
-                          .trim()
-                          .isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        _buildInfoText('الجنس', gender, isAvailable),
                         const SizedBox(height: 5),
-
-                        _buildInfoText(
-                          'المقاس',
-                          generalSize,
-                          isAvailable,
-                        ),
+                        _buildInfoText('الفئة العمرية', ageGroup, isAvailable),
+                        if (size.trim().isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          _buildInfoText('المقاس', size, isAvailable),
+                        ],
                       ],
-
-                      const SizedBox(height: 5),
-
-                      _buildInfoText(
-                        'عدد القطع',
-                        '$numberOfItems قطع',
-                        isAvailable,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            SizedBox(
-              width: double.infinity,
-              height: 45,
-              child: OutlinedButton.icon(
-                onPressed: () =>
-                    _deleteFromCart(cartDocId),
-
-                icon: const Icon(
-                  Icons.delete_outline_rounded,
-                  size: 20,
-                ),
-
-                label: const Text(
-                  'إزالة من السلة',
-                ),
-
-                style:
-                    OutlinedButton.styleFrom(
-                  foregroundColor:
-                      Colors.red.shade700,
-                  side: BorderSide(
-                    color: Colors.red.shade200,
-                  ),
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      AppDesign.radiusLG,
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 45,
+                child: OutlinedButton.icon(
+                  onPressed: () => _confirmAndDelete(cartDocId),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  label: const Text('إزالة من السلة'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    side: BorderSide(color: Colors.red.shade200),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppDesign.radiusLG),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
 
-  Widget _buildImagePreview(
-  List images,
-  bool isAvailable,
-) {
-  if (images.isEmpty) {
+  Widget _buildImagePreview(List images, bool isAvailable) {
+    if (images.isEmpty) {
+      return Container(
+        width: 95,
+        height: 115,
+        decoration: BoxDecoration(
+          color: AppDesign.surfaceAlt,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(
+          Icons.checkroom_outlined,
+          size: 34,
+          color: isAvailable ? AppDesign.primary : Colors.grey,
+        ),
+      );
+    }
+
     return Container(
       width: 95,
       height: 115,
-      decoration: BoxDecoration(
-        color: AppDesign.surfaceAlt,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Icon(
-        Icons.inventory_2_outlined,
-        size: 34,
-        color: isAvailable
-            ? AppDesign.primary
-            : Colors.grey,
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14)),
+      clipBehavior: Clip.antiAlias,
+      child: Image.network(
+        images.first.toString(),
+        fit: BoxFit.cover,
+        color: isAvailable ? null : Colors.grey.withOpacity(0.45),
+        colorBlendMode: isAvailable ? null : BlendMode.saturation,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: AppDesign.surfaceAlt,
+            child: Icon(
+              Icons.broken_image_outlined,
+              size: 34,
+              color: isAvailable ? AppDesign.primary : Colors.grey,
+            ),
+          );
+        },
       ),
     );
   }
 
-  return Container(
-    width: 95,
-    height: 115,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(14),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: Image.network(
-      images.first.toString(),
-      fit: BoxFit.cover,
-      color: isAvailable
-          ? null
-          : Colors.grey.withOpacity(0.45),
-      colorBlendMode: isAvailable
-          ? null
-          : BlendMode.saturation,
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: AppDesign.surfaceAlt,
-          child: Icon(
-            Icons.broken_image_outlined,
-            size: 34,
-            color: isAvailable
-                ? AppDesign.primary
-                : Colors.grey,
-          ),
-        );
-      },
-    ),
-  );
-}
-
-  Widget _buildInfoText(
-    String title,
-    String value,
-    bool isAvailable,
-  ) {
+  Widget _buildInfoText(String title, String value, bool isAvailable) {
     return Text(
       '$title: $value',
-      style: AppDesign.bodySecondaryStyle
-          .copyWith(
-        color: isAvailable
-            ? AppDesign.textSecondary
-            : Colors.grey.shade500,
+      style: AppDesign.bodySecondaryStyle.copyWith(
+        color: isAvailable ? AppDesign.textSecondary : Colors.grey.shade500,
         fontSize: 13,
       ),
     );
@@ -611,19 +473,14 @@ class _BeneficiaryCartPageState
       child: Padding(
         padding: const EdgeInsets.all(30),
         child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-
             Icon(
               Icons.shopping_cart_outlined,
               size: 75,
-              color: AppDesign.primary
-                  .withOpacity(0.45),
+              color: AppDesign.primary.withOpacity(0.45),
             ),
-
             const SizedBox(height: 18),
-
             Text(
               'السلة فارغة',
               style: AppDesign.h2Style.copyWith(
@@ -631,11 +488,9 @@ class _BeneficiaryCartPageState
                 fontWeight: FontWeight.w800,
               ),
             ),
-
             const SizedBox(height: 8),
-
             Text(
-              'يمكنك إضافة صناديق التبرعات التي تناسبك من صفحة التبرعات.',
+              'يمكنك إضافة القطع التي تناسبك من صفحة التبرعات.',
               textAlign: TextAlign.center,
               style: AppDesign.bodyStyle.copyWith(
                 color: AppDesign.textSecondary,
@@ -653,29 +508,21 @@ class _BeneficiaryCartPageState
     required bool hasAvailable,
     required List<Map<String, dynamic>> availableItems,
   }) {
-
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          16,
-        ),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: SizedBox(
           width: double.infinity,
           height: AppDesign.buttonHeightMD,
           child: ElevatedButton(
-           onPressed:
-    hasUnavailable || !hasAvailable 
-        ? null
-        : () async {
-await _goToDeliveryMethod(availableItems);          },
+            onPressed: hasUnavailable || !hasAvailable
+                ? null
+                : () async {
+                    await _goToDeliveryMethod(availableItems);
+                  },
             child: Text(
-              hasUnavailable
-                  ? 'أزل الصناديق غير المتاحة للمتابعة'
-                  : 'طلب التبرع',
+              hasUnavailable ? 'أزل القطع غير المتاحة للمتابعة' : 'طلب التبرع',
             ),
           ),
         ),
