@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_design.dart';
-import 'box_code_generator.dart';
 import 'dart:math';
 
 class DonorDeliveryPage extends StatefulWidget {
