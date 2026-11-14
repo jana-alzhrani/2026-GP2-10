@@ -641,8 +641,9 @@ class _StatusChip extends StatelessWidget {
 }
 
 /// ═══════════════════════════ صفحة مسح الباركود (تأكيد الاستلام) ═══════════════════════════
-/// صفحة مسح باركود الصندوق لتأكيد الاستلام من المستودع.
-/// ترجع true عند اكتمال استلام كل الصناديق.
+/// الباركود يحمل قيمة requestId الكاملة.
+/// عند التطابق: القطع والصناديق -> delivered، والطلب -> completed.
+/// ترجع true عند نجاح الاستلام.
 class PickupScanPage extends StatefulWidget {
   final String requestId;
 
@@ -654,7 +655,8 @@ class PickupScanPage extends StatefulWidget {
 
 class _PickupScanPageState extends State<PickupScanPage> {
   final MobileScannerController _controller = MobileScannerController(
-    detectionSpeed: DetectionSpeed.noDuplicates,
+    detectionSpeed: DetectionSpeed.normal,
+    detectionTimeoutMs: 1000,
     formats: const [BarcodeFormat.all],
   );
 
@@ -667,9 +669,6 @@ class _PickupScanPageState extends State<PickupScanPage> {
   }
 
   String _normalize(String s) => s.trim().toLowerCase();
-
-  String _codeOf(Map<String, dynamic> d, String fallback) =>
-      (d['boxCode'] ?? d['code'] ?? d['boxNumber'] ?? fallback).toString();
 
   void _toast(String msg, {bool error = false}) {
     if (!mounted) return;
@@ -724,12 +723,21 @@ class _PickupScanPageState extends State<PickupScanPage> {
     setState(() => _busy = true);
 
     try {
+      // 1) الباركود لازم يطابق requestId
+      if (_normalize(raw) != _normalize(widget.requestId)) {
+        debugPrint('SCANNED: "$raw" | REQUEST: "${widget.requestId}"');
+        _toast('هذا الباركود لا يخص طلبك', error: true);
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+
       final db = FirebaseFirestore.instance;
       final requestRef = db
           .collection(kRequestsCollection)
           .doc(widget.requestId);
 
-      // 1) تأكد أن الطلب لم يكتمل
+      // 2) تأكد أن الطلب لم يكتمل
       final requestSnap = await requestRef.get();
       if (requestSnap.data()?['status'] == kCompletedStatus) {
         _toast('تم استلام هذا الطلب مسبقاً', error: true);
@@ -738,59 +746,39 @@ class _PickupScanPageState extends State<PickupScanPage> {
         return;
       }
 
-      // 2) قطع الطلب
+      // 3) قطع الطلب
       final itemsSnap = await db
           .collection('items')
           .where('requestId', isEqualTo: widget.requestId)
           .get();
 
-      if (itemsSnap.docs.isEmpty) {
-        _toast('لا توجد قطع مرتبطة بالطلب', error: true);
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
-
-      // 3) صناديق هذه القطع
-      final boxIds = itemsSnap.docs
-          .map((d) => (d.data()['boxId'] ?? '').toString())
-          .where((id) => id.isNotEmpty)
-          .toSet();
-
-      bool matched = false;
-      for (final id in boxIds) {
-        final boxSnap = await db.collection(kBoxesCollection).doc(id).get();
-        final data = boxSnap.data();
-        if (data == null) continue;
-
-        if (_normalize(_codeOf(data, id)) == _normalize(raw)) {
-          matched = true;
-          break;
-        }
-      }
-
-      if (!matched) {
-        _toast('هذا الباركود لا يخص طلبك', error: true);
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
-
-      // 4) إكمال الطلب كله
       final batch = db.batch();
 
+      // 4) القطع -> delivered
       for (final itemDoc in itemsSnap.docs) {
         batch.update(itemDoc.reference, {'status': 'delivered'});
       }
 
+      // 5) الصناديق -> delivered
+      final boxIds = itemsSnap.docs
+          .map((d) => (d.data()['boxId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      for (final boxId in boxIds) {
+        batch.update(db.collection(kBoxesCollection).doc(boxId), {
+          'status': 'delivered',
+        });
+      }
+
+      // 6) الطلب -> completed
       batch.update(requestRef, {
         'status': kCompletedStatus,
         'deliveredAt': FieldValue.serverTimestamp(),
       });
 
-      // تحديث التبرعات اللي كل قطعها صارت مستلمة
+      // 7) التبرعات اللي كل قطعها صارت مستلمة
       final currentIds = itemsSnap.docs.map((d) => d.id).toSet();
-
       final donationIds = itemsSnap.docs
           .map((d) => (d.data()['donationId'] ?? '').toString().trim())
           .where((id) => id.isNotEmpty)
@@ -821,9 +809,7 @@ class _PickupScanPageState extends State<PickupScanPage> {
       await batch.commit();
 
       if (!mounted) return;
-
       await _showSuccessDialog('تم استلام الطلب بنجاح');
-
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
@@ -853,7 +839,20 @@ class _PickupScanPageState extends State<PickupScanPage> {
         ),
         body: Stack(
           children: [
-            MobileScanner(controller: _controller, onDetect: _onDetect),
+            MobileScanner(
+              controller: _controller,
+              onDetect: _onDetect,
+              errorBuilder: (context, error, child) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'خطأ الكاميرا: ${error.errorCode}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
             // إطار التوجيه
             Center(
               child: Container(
@@ -876,7 +875,7 @@ class _PickupScanPageState extends State<PickupScanPage> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Text(
-                  'وجّه الكاميرا نحو باركود الصندوق لتأكيد استلامه',
+                  'وجّه الكاميرا نحو باركود الطلب لتأكيد استلامه',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white, fontSize: 14),
                 ),
