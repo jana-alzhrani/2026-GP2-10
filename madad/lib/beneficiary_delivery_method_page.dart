@@ -22,8 +22,7 @@ class _BeneficiaryDeliveryMethodPageState
     extends State<BeneficiaryDeliveryMethodPage> {
   String? selectedMethod;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController _shortAddressController =
-      TextEditingController();
+  final TextEditingController _shortAddressController = TextEditingController();
 
   String? selectedCity;
   String? selectedDistrict;
@@ -232,8 +231,9 @@ class _BeneficiaryDeliveryMethodPageState
                             color: AppDesign.primary,
                           )
                         : null,
-                    onTap:
-                        isAvailable ? () => Navigator.pop(context, city) : null,
+                    onTap: isAvailable
+                        ? () => Navigator.pop(context, city)
+                        : null,
                   );
                 }),
               ],
@@ -281,7 +281,8 @@ class _BeneficiaryDeliveryMethodPageState
                       left: AppDesign.screenPadding,
                       right: AppDesign.screenPadding,
                       top: AppDesign.screenPadding,
-                      bottom: MediaQuery.of(context).viewInsets.bottom +
+                      bottom:
+                          MediaQuery.of(context).viewInsets.bottom +
                           AppDesign.screenPadding,
                     ),
                     child: Column(
@@ -320,10 +321,11 @@ class _BeneficiaryDeliveryMethodPageState
                               filteredDistricts = query.isEmpty
                                   ? List.from(riyadhDistricts)
                                   : riyadhDistricts
-                                      .where(
-                                        (district) => district.contains(query),
-                                      )
-                                      .toList();
+                                        .where(
+                                          (district) =>
+                                              district.contains(query),
+                                        )
+                                        .toList();
                             });
                           },
                         ),
@@ -359,10 +361,7 @@ class _BeneficiaryDeliveryMethodPageState
                                             )
                                           : null,
                                       onTap: () {
-                                        Navigator.pop(
-                                          context,
-                                          district,
-                                        );
+                                        Navigator.pop(context, district);
                                       },
                                     );
                                   },
@@ -393,17 +392,12 @@ class _BeneficiaryDeliveryMethodPageState
       'https://www.google.com/maps/search/?api=1&query=$warehouseLat,$warehouseLng',
     );
 
-    final opened = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تعذر فتح خرائط Google'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تعذر فتح خرائط Google')));
     }
   }
 
@@ -425,16 +419,11 @@ class _BeneficiaryDeliveryMethodPageState
         decoration: BoxDecoration(
           color: AppDesign.white,
           borderRadius: BorderRadius.circular(AppDesign.radiusLG),
-          border: Border.all(
-            color: AppDesign.border,
-          ),
+          border: Border.all(color: AppDesign.border),
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              color: AppDesign.primary,
-            ),
+            Icon(icon, color: AppDesign.primary),
             AppGap.wMD,
             Expanded(
               child: Column(
@@ -454,8 +443,9 @@ class _BeneficiaryDeliveryMethodPageState
                       color: value == null
                           ? AppDesign.textSecondary
                           : AppDesign.textPrimary,
-                      fontWeight:
-                          value == null ? FontWeight.w400 : FontWeight.w700,
+                      fontWeight: value == null
+                          ? FontWeight.w400
+                          : FontWeight.w700,
                     ),
                   ),
                 ],
@@ -475,12 +465,8 @@ class _BeneficiaryDeliveryMethodPageState
     return Form(
       key: _formKey,
       child: Container(
-        margin: const EdgeInsets.only(
-          top: AppDesign.spaceMD,
-        ),
-        padding: const EdgeInsets.all(
-          AppDesign.cardPadding,
-        ),
+        margin: const EdgeInsets.only(top: AppDesign.spaceMD),
+        padding: const EdgeInsets.all(AppDesign.cardPadding),
         decoration: AppDesign.primaryCardDecoration,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -642,7 +628,6 @@ class _BeneficiaryDeliveryMethodPageState
           ),
           _scanStep(3, 'صوّر الباركود  لتأكيد الاستلام.'),
           const SizedBox(height: 10),
-         
         ],
       ),
     );
@@ -650,12 +635,8 @@ class _BeneficiaryDeliveryMethodPageState
 
   Widget _pickupSection() {
     return Container(
-      margin: const EdgeInsets.only(
-        top: AppDesign.spaceMD,
-      ),
-      padding: const EdgeInsets.all(
-        AppDesign.cardPadding,
-      ),
+      margin: const EdgeInsets.only(top: AppDesign.spaceMD),
+      padding: const EdgeInsets.all(AppDesign.cardPadding),
       decoration: AppDesign.primaryCardDecoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -670,9 +651,7 @@ class _BeneficiaryDeliveryMethodPageState
           AppGap.sm,
           Text(
             warehouseName,
-            style: AppDesign.bodyStyle.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+            style: AppDesign.bodyStyle.copyWith(fontWeight: FontWeight.w700),
           ),
           AppGap.md,
           Text(
@@ -683,10 +662,7 @@ class _BeneficiaryDeliveryMethodPageState
             ),
           ),
           AppGap.xs,
-          Text(
-            warehouseHours,
-            style: AppDesign.bodySecondaryStyle,
-          ),
+          Text(warehouseHours, style: AppDesign.bodySecondaryStyle),
           AppGap.lg,
 
           // 👇 توضيح مسح الباركود
@@ -698,9 +674,7 @@ class _BeneficiaryDeliveryMethodPageState
             child: ElevatedButton.icon(
               onPressed: _openWarehouseMap,
               icon: const Icon(Icons.map_outlined),
-              label: const Text(
-                'فتح موقع المستودع في Google Maps',
-              ),
+              label: const Text('فتح موقع المستودع في Google Maps'),
             ),
           ),
         ],
@@ -727,8 +701,9 @@ class _BeneficiaryDeliveryMethodPageState
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(AppDesign.cardPadding),
         decoration: BoxDecoration(
-          color:
-              selected ? AppDesign.primary.withOpacity(0.08) : AppDesign.white,
+          color: selected
+              ? AppDesign.primary.withOpacity(0.08)
+              : AppDesign.white,
           borderRadius: BorderRadius.circular(AppDesign.radiusLG),
           border: Border.all(
             color: selected ? AppDesign.primary : AppDesign.border,
@@ -747,10 +722,7 @@ class _BeneficiaryDeliveryMethodPageState
                 });
               },
             ),
-            Icon(
-              icon,
-              color: AppDesign.primary,
-            ),
+            Icon(icon, color: AppDesign.primary),
             AppGap.wMD,
             Expanded(
               child: Column(
@@ -811,98 +783,77 @@ class _BeneficiaryDeliveryMethodPageState
 
       if (widget.cartItems.isEmpty) {
         if (!mounted) return;
-        AppDesign.showErrorSnackBar(
-          context,
-          'لا توجد صناديق لإتمام الطلب',
-        );
+        AppDesign.showErrorSnackBar(context, 'لا توجد قطع لإتمام الطلب');
         return;
       }
 
       await firestore.runTransaction((transaction) async {
-        final boxSnapshots =
-            <String, DocumentSnapshot<Map<String, dynamic>>>{};
+        final itemRefs = <DocumentReference<Map<String, dynamic>>>[];
+        final cartRefs = <DocumentReference<Map<String, dynamic>>>[];
+        final itemIds = <String>[];
+        final boxIds = <String>{};
 
-        final cartRefs = <String, DocumentReference<Map<String, dynamic>>>{};
+        // 1. Read and validate everything first
+        for (final entry in widget.cartItems) {
+          final itemId = (entry['itemId'] ?? '').toString();
+          final cartDocId = (entry['cartDocId'] ?? '').toString();
 
-        // 1. قراءة جميع الصناديق أولًا
-        for (final item in widget.cartItems) {
-          final boxId = item['boxId']?.toString();
-          final cartDocId = item['cartDocId']?.toString();
-
-          if (boxId == null ||
-              boxId.isEmpty ||
-              cartDocId == null ||
-              cartDocId.isEmpty) {
-            throw Exception('بيانات الصندوق غير مكتملة');
+          if (itemId.isEmpty || cartDocId.isEmpty) {
+            throw Exception('بيانات القطعة غير مكتملة');
           }
 
-          final boxRef = firestore.collection('donation_boxes').doc(boxId);
+          final itemRef = firestore.collection('items').doc(itemId);
+          final cartRef = firestore.collection('cart').doc(cartDocId);
 
-          final boxSnapshot = await transaction.get(boxRef);
+          final itemSnap = await transaction.get(itemRef);
+          final cartSnap = await transaction.get(cartRef);
 
-          boxSnapshots[boxId] = boxSnapshot;
-
-          cartRefs[cartDocId] = firestore.collection('cart').doc(cartDocId);
-        }
-
-        // 2. التأكد أن جميع الصناديق ما زالت متاحة
-        for (final snapshot in boxSnapshots.values) {
-          if (!snapshot.exists) {
-            throw Exception('أحد الصناديق لم يعد موجودًا');
+          if (!itemSnap.exists) {
+            throw Exception('إحدى القطع لم تعد موجودة');
           }
-
-          final data = snapshot.data();
-
-          if (data?['status'] != 'available') {
+          if (itemSnap.data()?['status'] != 'available') {
             throw Exception(
-              'أحد الصناديق لم يعد متاحًا، يرجى العودة للسلة والمحاولة مرة أخرى',
-            );
-          }
-        }
-
-        // 3. قراءة مستندات السلة
-        final cartSnapshots =
-            <String, DocumentSnapshot<Map<String, dynamic>>>{};
-
-        for (final entry in cartRefs.entries) {
-          final snapshot = await transaction.get(entry.value);
-          cartSnapshots[entry.key] = snapshot;
-        }
-
-        // 4. التأكد أن عناصر السلة ما زالت صحيحة
-        for (final snapshot in cartSnapshots.values) {
-          if (!snapshot.exists) {
-            throw Exception('أحد عناصر السلة لم يعد موجودًا');
-          }
-
-          final data = snapshot.data();
-
-          if (data?['status'] != 'in_cart') {
-            throw Exception(
-              'أحد الصناديق لم يعد موجودًا في السلة',
+              'إحدى القطع لم تعد متاحة، يرجى العودة للسلة والمحاولة مرة أخرى',
             );
           }
 
-          if (data?['beneficiaryId'] != widget.userId) {
-            throw Exception('هذا الصندوق لا ينتمي إلى حسابك');
+          if (!cartSnap.exists) {
+            throw Exception('إحدى عناصر السلة لم تعد موجودة');
           }
+          final cartData = cartSnap.data();
+          if (cartData?['status'] != 'in_cart') {
+            throw Exception('إحدى القطع لم تعد موجودة في السلة');
+          }
+          if (cartData?['beneficiaryId'] != widget.userId) {
+            throw Exception('هذه القطعة لا تنتمي إلى حسابك');
+          }
+
+          itemRefs.add(itemRef);
+          cartRefs.add(cartRef);
+          itemIds.add(itemId);
+
+          final boxId = (itemSnap.data()?['boxId'] ?? '').toString();
+          if (boxId.isNotEmpty) boxIds.add(boxId);
         }
 
-        // 5. إنشاء الطلب
+        // 2. Create the request
         transaction.set(requestRef, {
           'requestId': requestRef.id,
           'beneficiaryId': widget.userId,
           'courierId': null,
           'status': 'requested',
           'deliveryMethod': selectedMethod,
+          'itemIds': itemIds,
+          'boxIds': boxIds.toList(),
           'createdAt': FieldValue.serverTimestamp(),
           'deliveredAt': null,
           'deliveryAddress': selectedMethod == 'delivery'
               ? {
                   'city': selectedCity,
                   'district': selectedDistrict,
-                  'shortNationalAddress':
-                      _shortAddressController.text.trim().toUpperCase(),
+                  'shortNationalAddress': _shortAddressController.text
+                      .trim()
+                      .toUpperCase(),
                 }
               : {
                   'warehouseName': warehouseName,
@@ -911,29 +862,19 @@ class _BeneficiaryDeliveryMethodPageState
                 },
         });
 
-        // 6. حجز الصناديق
-        for (final item in widget.cartItems) {
-          final boxId = item['boxId'].toString();
-          final cartDocId = item['cartDocId'].toString();
-
-          final boxRef = firestore.collection('donation_boxes').doc(boxId);
-
-          final cartRef = firestore.collection('cart').doc(cartDocId);
-
-          transaction.update(boxRef, {
+        // 3. Reserve the items and take them out of the cart
+        for (var i = 0; i < itemRefs.length; i++) {
+          transaction.update(itemRefs[i], {
             'status': 'reserved',
             'requestId': requestRef.id,
           });
-
-          // إخراج الصندوق من السلة
-          transaction.update(cartRef, {
-            'status': 'requested',
-          });
+          transaction.update(cartRefs[i], {'status': 'requested'});
         }
       });
 
-      print('REQUEST CREATED: ${requestRef.id}');
+      debugPrint('REQUEST CREATED: ${requestRef.id}');
 
+      if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(
         context,
         '/beneficiaryHome',
@@ -941,20 +882,14 @@ class _BeneficiaryDeliveryMethodPageState
         arguments: widget.userId,
       );
     } catch (e) {
-      print('Error creating request: $e');
-
+      debugPrint('Error creating request: $e');
       if (!mounted) return;
 
-      String message = e.toString();
-
+      var message = e.toString();
       if (message.startsWith('Exception: ')) {
         message = message.substring('Exception: '.length);
       }
-
-      AppDesign.showErrorSnackBar(
-        context,
-        message,
-      );
+      AppDesign.showErrorSnackBar(context, message);
     }
   }
 
