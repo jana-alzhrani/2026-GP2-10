@@ -43,7 +43,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
   final TextEditingController _itemCountController = TextEditingController();
 
-  // ضع مفتاحك هنا (الأفضل نقل الاستدعاء إلى Cloud Function)
   final String _apiKey = '';
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
@@ -54,18 +53,20 @@ class _EditDonationPageState extends State<EditDonationPage> {
   Map<int, List<Map<String, dynamic>>> boxes = {};
   Set<int> savedBoxes = {};
 
-  // مسارات الصور المحفوظة حالياً في Storage (عشان نحذف القديمة بعد الحفظ)
-  Set<String> _originalImagePaths = {};
+final List<Map<String, dynamic>> ageGroups = [
+  {'label': 'رضّع (0-2)', 'min': 0, 'max': 2},
+  {'label': 'أطفال صغار (3-5)', 'min': 3, 'max': 5},
+  {'label': 'أطفال (6-9)', 'min': 6, 'max': 9},
+  {'label': 'أطفال (10-15)', 'min': 10, 'max': 15},
+  {'label': 'بالغون', 'min': 16, 'max': 120},
+];
 
-  final List<Map<String, dynamic>> ageGroups = [
-    {'label': 'رضّع (0-2)', 'min': 0, 'max': 2},
-    {'label': 'أطفال صغار (3-5)', 'min': 3, 'max': 5},
-    {'label': 'أطفال (6-9)', 'min': 6, 'max': 9},
-    {'label': 'أطفال (10-15)', 'min': 10, 'max': 15},
-    {'label': 'بالغون', 'min': 16, 'max': 120},
+  final List<String> sizeRanges = [
+    "XS - S",
+    "S - M",
+    "M - L",
+    "L - XL",
   ];
-
-  final List<String> sizeRanges = ["XS - S", "S - M", "M - L", "L - XL"];
 
   final Map<String, String> typeMap = {
     "shirt": "قميص",
@@ -76,40 +77,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     "bag": "حقيبة",
     "hat": "قبعة",
   };
-
-  // ============================================================
-  // Controllers حقول وصف القطع
-  // ============================================================
-
-  final Map<String, TextEditingController> _descControllers = {};
-
-  TextEditingController _descCtrl(int box, int idx) {
-    return _descControllers.putIfAbsent(
-      '${box}_$idx',
-      () => TextEditingController(
-        text: (boxes[box]?[idx]['description'] ?? '').toString(),
-      ),
-    );
-  }
-
-  // نتخلص من الـ controller بعد انتهاء الفريم (عشان ما نعمل dispose
-  // وهو لسا مربوط بـ TextField)
-  void _disposeDescController(String key) {
-    final ctrl = _descControllers.remove(key);
-    if (ctrl == null) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ctrl.dispose();
-    });
-  }
-
-  void _clearAllDescControllers() {
-    for (final k in _descControllers.keys.toList()) {
-      _disposeDescController(k);
-    }
-  }
-
-  // ============================================================
 
   Map<String, dynamic>? _findAgeGroupByLabel(String? label) {
     if (label == null || label.trim().isEmpty) return null;
@@ -124,9 +91,9 @@ class _EditDonationPageState extends State<EditDonationPage> {
   }
 
   bool ageNeedsSize() {
-    if (selectedAgeGroup == null) return false;
-    return selectedAgeGroup!['label'] == 'بالغون';
-  }
+  if (selectedAgeGroup == null) return false;
+  return selectedAgeGroup!['label'] == 'بالغون';
+}
 
   bool canOpenBox() {
     if (selectedGender == null) return false;
@@ -138,23 +105,15 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
     return true;
   }
+Future<String> uploadImage(Uint8List bytes) async {
+  final ref = FirebaseStorage.instance
+      .ref()
+      .child('donation_images/${DateTime.now().millisecondsSinceEpoch}.jpg');
 
-  // هل القطعة لها صورة (جديدة أو محفوظة)؟
-  bool _hasImage(Map<String, dynamic> item) {
-    if (item['image'] != null) return true;
-    return (item['imageUrl'] ?? '').toString().isNotEmpty;
-  }
+  await ref.putData(bytes);
 
-  Future<Map<String, String>> uploadImage(Uint8List bytes, String path) async {
-    final ref = FirebaseStorage.instance.ref().child(path);
-
-    await ref.putData(bytes);
-
-    final url = await ref.getDownloadURL();
-
-    return {'url': url, 'path': ref.fullPath};
-  }
-
+  return await ref.getDownloadURL();
+}
   @override
   void initState() {
     super.initState();
@@ -163,20 +122,15 @@ class _EditDonationPageState extends State<EditDonationPage> {
     selectedAgeGroup = _findAgeGroupByLabel(widget.initialAgeGroupLabel);
 
     totalItems = widget.initialItemCount;
-    _itemCountController.text = widget.initialItemCount == 0
-        ? ''
-        : widget.initialItemCount.toString();
+    _itemCountController.text =
+        widget.initialItemCount == 0 ? '' : widget.initialItemCount.toString();
 
     if (widget.initialBoxes != null && widget.initialBoxes!.isNotEmpty) {
       boxes = Map<int, List<Map<String, dynamic>>>.from(
         widget.initialBoxes!.map(
           (key, value) => MapEntry(
             key,
-            value.map((item) {
-              final m = Map<String, dynamic>.from(item);
-              m['description'] = (m['description'] ?? '').toString();
-              return m;
-            }).toList(),
+            value.map((item) => Map<String, dynamic>.from(item)).toList(),
           ),
         ),
       );
@@ -187,454 +141,231 @@ class _EditDonationPageState extends State<EditDonationPage> {
     } else {
       _loadDonationBoxes();
     }
+
+    _loadDonationBoxes();
   }
 
-  Future<Uint8List?> _downloadImage(String? url) async {
-    if (url == null || url.isEmpty) return null;
+Future<void> _loadDonationBoxes() async {
+  try {
+    final snapshot = await firestore
+        .collection('donation_boxes')
+        .where('donationId', isEqualTo: widget.donationId)
+        .get();
 
-    try {
-      final response = await http.get(Uri.parse(url));
+    final Map<int, List<Map<String, dynamic>>> loadedBoxes = {};
+    String? loadedGeneralSize;
 
-      if (response.statusCode == 200) {
-        return response.bodyBytes;
-      }
-    } catch (e) {
-      debugPrint('Image load error: $e');
-    }
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
 
-    return null;
-  }
+      final int boxNumber = (data['boxNumber'] ?? 0) as int;
+      final List<dynamic> items = data['items'] ?? [];
 
-  // ============================================================
-  // تحميل الصناديق + القطع (من كولكشن items)
-  // ============================================================
+      if (items.isEmpty) continue;
 
-  Future<void> _loadDonationBoxes() async {
-    try {
-      final boxesSnap = await firestore
-          .collection('donation_boxes')
-          .where('donationId', isEqualTo: widget.donationId)
-          .get();
-
-      final itemsSnap = await firestore
-          .collection('items')
-          .where('donationId', isEqualTo: widget.donationId)
-          .get();
-
-      // نجمع القطع حسب الصندوق
-      final Map<String, List<Map<String, dynamic>>> itemsByBox = {};
-
-      for (final d in itemsSnap.docs) {
-        final data = d.data();
-        final boxId = (data['boxId'] ?? '').toString();
-
-        itemsByBox.putIfAbsent(boxId, () => []).add(data);
+      if (data['generalSize'] != null) {
+        loadedGeneralSize = data['generalSize'];
       }
 
-      final Map<int, List<Map<String, dynamic>>> loadedBoxes = {};
-      final Set<String> loadedPaths = {};
-      String? loadedGeneralSize;
+      loadedBoxes[boxNumber] = [];
 
-      for (final doc in boxesSnap.docs) {
-        final data = doc.data();
+      for (final item in items) {
+        final map = Map<String, dynamic>.from(item);
 
-        final int boxNumber = (data['boxNumber'] ?? 0) as int;
+       Uint8List? imageBytes;
 
-        // القطع من كولكشن items، ولو الصندوق قديم نقرأ من الـ array
-        List<Map<String, dynamic>> rawItems = [...(itemsByBox[doc.id] ?? [])];
-
-        rawItems.sort((a, b) {
-          final an = (a['itemNumber'] ?? 0) as num;
-          final bn = (b['itemNumber'] ?? 0) as num;
-          return an.compareTo(bn);
-        });
-
-        if (rawItems.isEmpty && data['items'] is List) {
-          rawItems = (data['items'] as List)
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList();
-        }
-
-        if (rawItems.isEmpty) continue;
-
-        final gs = (data['generalSize'] ?? '').toString();
-        if (gs.isNotEmpty) {
-          loadedGeneralSize = gs;
-        }
-
-        // تحميل الصور بالتوازي
-        final images = await Future.wait(
-          rawItems.map((m) => _downloadImage(m['imageUrl']?.toString())),
-        );
-
-        loadedBoxes[boxNumber] = [];
-
-        for (int i = 0; i < rawItems.length; i++) {
-          final map = rawItems[i];
-          final imageUrl = (map['imageUrl'] ?? '').toString();
-          final imagePath = (map['imagePath'] ?? '').toString();
-
-          if (imagePath.isNotEmpty) loadedPaths.add(imagePath);
-
-          loadedBoxes[boxNumber]!.add({
-            'image': images[i],
-            'imageUrl': imageUrl.isEmpty ? null : imageUrl,
-            'imagePath': imagePath,
-            'type': map['type'],
-            'size': map['size'],
-            'description': (map['description'] ?? '').toString(),
-            'isValid': imageUrl.isNotEmpty || images[i] != null,
-            'error': null,
-          });
-        }
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        if (loadedBoxes.isNotEmpty) {
-          boxes = loadedBoxes;
-
-          totalBoxes = loadedBoxes.length;
-
-          totalItems = loadedBoxes.values.fold(
-            0,
-            (sum, items) => sum + items.length,
-          );
-
-          _itemCountController.text = totalItems.toString();
-
-          savedBoxes = loadedBoxes.keys.toSet();
-        }
-
-        _originalImagePaths = loadedPaths;
-
-        if (loadedGeneralSize != null) {
-          generalSize = loadedGeneralSize;
-        }
-
-        isLoadingBoxes = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        isLoadingBoxes = false;
-      });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('فشل تحميل محتوى التبرع: $e')));
-    }
-  }
-
-  Map<String, dynamic> _emptyItem() {
-    return {
-      'image': null,
-      'imageUrl': null,
-      'imagePath': '',
-      'type': null,
-      'size': null,
-      'description': '',
-      'isValid': false,
-      'error': null,
-    };
-  }
-
-  void _updateItemCount(String value) {
-    setState(() {
-      itemCountError = null;
-      changesSaved = false;
-    });
-
-    if (value.isEmpty) {
-      _clearAllDescControllers();
-
-      setState(() {
-        totalItems = 0;
-        totalBoxes = 0;
-        boxes = {};
-        savedBoxes.clear();
-        openedBox = null;
-      });
-      return;
-    }
-
-    final parsed = int.tryParse(value);
-
-    if (parsed == null) {
-      setState(() {
-        itemCountError = "الرجاء إدخال أرقام فقط";
-      });
-      return;
-    }
-
-    if (parsed > 100) {
-      _clearAllDescControllers();
-
-      setState(() {
-        itemCountError = "الحد الأقصى 100 قطعة";
-        totalItems = 0;
-        totalBoxes = 0;
-        boxes = {};
-        savedBoxes.clear();
-        openedBox = null;
-      });
-      return;
-    }
-
-    if (parsed <= 0) return;
-
-    final oldBoxes = boxes.map(
-      (key, value) => MapEntry(
-        key,
-        value.map((item) => Map<String, dynamic>.from(item)).toList(),
-      ),
+if (map['imageUrl'] != null &&
+    map['imageUrl'].toString().isNotEmpty) {
+  try {
+    final response = await http.get(
+      Uri.parse(map['imageUrl']),
     );
 
-    final newTotalItems = parsed;
-    final newTotalBoxes = (newTotalItems / 5).ceil();
-
-    final Map<int, List<Map<String, dynamic>>> newBoxes = {};
-    int remainingItems = newTotalItems;
-
-    for (int i = 1; i <= newTotalBoxes; i++) {
-      final itemsInThisBox = remainingItems >= 5 ? 5 : remainingItems;
-      final existing = oldBoxes[i] ?? [];
-
-      if (existing.length >= itemsInThisBox) {
-        newBoxes[i] = existing.take(itemsInThisBox).toList();
-      } else {
-        final extraItems = List.generate(
-          itemsInThisBox - existing.length,
-          (_) => _emptyItem(),
-        );
-
-        newBoxes[i] = [...existing, ...extraItems];
-
-        // مهم جدًا: الصندوق صار غير محفوظ لأن فيه قطع جديدة
-        savedBoxes.remove(i);
+    if (response.statusCode == 200) {
+      imageBytes = response.bodyBytes;
+    }
+  } catch (e) {
+    debugPrint('Image load error: $e');
+  }
+}
+        loadedBoxes[boxNumber]!.add({
+          'image': imageBytes,
+          'imageUrl': map['imageUrl'],
+          'type': map['type'],
+          'size': map['size'],
+          'isValid': imageBytes != null,
+          'error': null,
+        });
       }
-
-      remainingItems -= itemsInThisBox;
     }
 
-    // الـ controllers ترجع تنبني من القيم الموجودة في boxes
-    _clearAllDescControllers();
+    if (!mounted) return;
 
     setState(() {
-      totalItems = newTotalItems;
-      totalBoxes = newTotalBoxes;
-      boxes = newBoxes;
-      savedBoxes.removeWhere((boxNumber) => boxNumber > totalBoxes);
+      if (loadedBoxes.isNotEmpty) {
+        boxes = loadedBoxes;
+
+        totalBoxes = loadedBoxes.length;
+
+        totalItems = loadedBoxes.values.fold(
+          0,
+          (sum, items) => sum + items.length,
+        );
+
+        _itemCountController.text = totalItems.toString();
+
+        savedBoxes = loadedBoxes.keys.toSet();
+      }
+
+      if (loadedGeneralSize != null) {
+        generalSize = loadedGeneralSize;
+      }
+
+      isLoadingBoxes = false;
+    });
+  } catch (e) {
+    if (!mounted) return;
+
+    setState(() {
+      isLoadingBoxes = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('فشل تحميل محتوى التبرع: $e'),
+      ),
+    );
+  }
+}
+Map<String, dynamic> _emptyItem() {
+  return {
+    'image': null,
+        'imageUrl': null,
+
+    'type': null,
+    'size': null,
+    'isValid': false,
+    'error': null,
+  };
+}
+  void _updateItemCount(String value) {
+  setState(() {
+    itemCountError = null;
+    changesSaved = false;
+  });
+
+  if (value.isEmpty) {
+    setState(() {
+      totalItems = 0;
+      totalBoxes = 0;
+      boxes = {};
+      savedBoxes.clear();
       openedBox = null;
     });
+    return;
   }
 
-  // نفس نافذة اختيار مصدر الصورة الموجودة في صفحة إضافة التبرع.
-  Future<ImageSource?> _showImageSourceBottomSheet() async {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppDesign.background,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(28),
-                topRight: Radius.circular(28),
-              ),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 45,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: AppDesign.border,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  AppGap.md,
-                  const Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      "اختار طريقة إضافة صورة القطعة",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      "تقدر تصور صورة جديدة أو تختار صورة من جهازك",
-                      style: TextStyle(fontSize: 13),
-                    ),
-                  ),
-                  AppGap.lg,
-                  _buildImageSourceOption(
-                    icon: Icons.camera_alt_outlined,
-                    title: "التقاط صورة",
-                    subtitle: "استخدم كاميرا الجوال لتصوير القطعة",
-                    onTap: () =>
-                        Navigator.pop(sheetContext, ImageSource.camera),
-                  ),
-                  AppGap.sm,
-                  _buildImageSourceOption(
-                    icon: Icons.photo_library_outlined,
-                    title: "اختيار من المعرض",
-                    subtitle: "اختار صورة موجودة في جهازك",
-                    onTap: () =>
-                        Navigator.pop(sheetContext, ImageSource.gallery),
-                  ),
-                  AppGap.md,
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(sheetContext),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        side: BorderSide(color: AppDesign.border),
-                      ),
-                      child: const Text(
-                        "إلغاء",
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
+  final parsed = int.tryParse(value);
+
+  if (parsed == null) {
+    setState(() {
+      itemCountError = "الرجاء إدخال أرقام فقط";
+    });
+    return;
   }
 
-  Widget _buildImageSourceOption({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppDesign.surfaceAlt,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppDesign.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppDesign.softGreen.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Icon(icon, color: AppDesign.primary, size: 27),
-            ),
-            AppGap.wMD,
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(subtitle, style: AppDesign.captionStyle),
-                ],
-              ),
-            ),
-            Icon(Icons.arrow_back_ios_new, size: 17, color: AppDesign.primary),
-          ],
-        ),
-      ),
-    );
+  if (parsed > 100) {
+    setState(() {
+      itemCountError = "الحد الأقصى 100 قطعة";
+      totalItems = 0;
+      totalBoxes = 0;
+      boxes = {};
+      savedBoxes.clear();
+      openedBox = null;
+    });
+    return;
   }
 
-  Future<void> _pickItemImage(int box, int index) async {
-    if (!boxes.containsKey(box) || index < 0 || index >= boxes[box]!.length) {
-      if (!mounted) return;
-      AppDesign.showErrorSnackBar(context, 'حدث خطأ في تحديد القطعة');
-      return;
-    }
+  if (parsed <= 0) return;
 
-    final source = await _showImageSourceBottomSheet();
-    if (source == null || !mounted) return;
+  final oldBoxes = Map<int, List<Map<String, dynamic>>>.from(boxes);
 
-    try {
-      final picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: source,
-        imageQuality: 60,
+  final newTotalItems = parsed;
+  final newTotalBoxes = (newTotalItems / 5).ceil();
+
+  final Map<int, List<Map<String, dynamic>>> newBoxes = {};
+  int remainingItems = newTotalItems;
+
+  for (int i = 1; i <= newTotalBoxes; i++) {
+    final itemsInThisBox = remainingItems >= 5 ? 5 : remainingItems;
+    final existing = oldBoxes[i] ?? [];
+
+    if (existing.length >= itemsInThisBox) {
+      newBoxes[i] = existing.take(itemsInThisBox).toList();
+    } else {
+      final extraItems = List.generate(
+        itemsInThisBox - existing.length,
+        (_) => _emptyItem(),
       );
 
-      if (image == null) return;
+      newBoxes[i] = [...existing, ...extraItems];
 
-      final Uint8List bytes = await image.readAsBytes();
-      if (!mounted) return;
-
-      setState(() {
-        // نلغي رابط الصورة القديمة فقط بعد اختيار صورة جديدة بالفعل.
-        boxes[box]![index]['image'] = bytes;
-        boxes[box]![index]['imageUrl'] = null;
-        boxes[box]![index]['imagePath'] = '';
-        boxes[box]![index]['isValid'] = false;
-        boxes[box]![index]['error'] = null;
-        boxes[box]![index]['type'] = null;
-        boxes[box]![index]['size'] = null;
-        boxes[box]![index]['description'] = '';
-        _disposeDescController('${box}_$index');
-        savedBoxes.remove(box);
-        changesSaved = false;
-      });
-
-      await _verifyImageWithGemini(box, index, bytes, image.mimeType);
-    } catch (e) {
-      if (!mounted) return;
-      AppDesign.showErrorSnackBar(context, "تعذر اختيار الصورة");
-      debugPrint('Image picker error: $e');
+      // مهم جدًا: الصندوق صار غير محفوظ لأن فيه قطع جديدة
+      savedBoxes.remove(i);
     }
+
+    remainingItems -= itemsInThisBox;
   }
+
+  setState(() {
+    totalItems = newTotalItems;
+    totalBoxes = newTotalBoxes;
+    boxes = newBoxes;
+    savedBoxes.removeWhere((boxNumber) => boxNumber > totalBoxes);
+    openedBox = null;
+  });
+}
+Future<void> _pickItemImage(int box, int index) async {
+  boxes[box]![index]['imageUrl'] = null;
+  if (!boxes.containsKey(box) || index >= boxes[box]!.length) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('حدث خطأ في تحديد القطعة')),
+    );
+    return;
+  }
+
+  final picker = ImagePicker();
+  final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+  if (image == null) return;
+
+  final bytes = await image.readAsBytes();
+
+  setState(() {
+    boxes[box]![index]['image'] = bytes;
+    boxes[box]![index]['isValid'] = false;
+    boxes[box]![index]['error'] = "جاري الفحص...";
+    boxes[box]![index]['type'] = null;
+    boxes[box]![index]['size'] = null;
+
+    // مهم: الصندوق يحتاج حفظ من جديد
+    savedBoxes.remove(box);
+    changesSaved = false;
+  });
+
+  await _verifyImageWithGemini(box, index, bytes);
+}
 
   Future<void> _verifyImageWithGemini(
     int box,
     int index,
     Uint8List imageBytes,
-    String? mimeType,
   ) async {
-    if (!mounted) return;
-
     setState(() {
       boxes[box]![index]['error'] = "جاري الفحص...";
     });
+
+   
 
     final String url =
         'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$_apiKey';
@@ -645,11 +376,15 @@ class _EditDonationPageState extends State<EditDonationPage> {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          "contents": [
+             "contents": [
+
             {
+
               "parts": [
+
                 {
-                  "text": """
+
+            "text": """
 Check the image.
 
 If it is a valid clothing item or bag, answer in this format:
@@ -665,22 +400,25 @@ Reject if:
 - completely black
 - blurry
 - not clothing or bag
-""",
+"""
+
                 },
 
-                {
-                  "inline_data": {
-                    "mime_type": mimeType ?? "image/jpeg",
-                    "data": base64Image,
-                  },
-                },
-              ],
-            },
-          ],
+{"inline_data": {
+  "mime_type": "image/jpeg",
+  "data": base64Image
+}}
+              ]
+
+            }
+
+          ]
+
         }),
+
       );
 
-      if (!mounted) return;
+
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -706,18 +444,21 @@ Reject if:
               boxes[box]![index]['size'] = null;
             }
 
-            AppDesign.showImageValidSnackBar(context, "الصورة صالحة");
+           AppDesign.showImageValidSnackBar(
+            context,
+            "الصورة صالحة",
+          );
           } else {
             boxes[box]![index]['image'] = null;
             boxes[box]![index]['type'] = null;
             boxes[box]![index]['size'] = null;
-            boxes[box]![index]['description'] = '';
             boxes[box]![index]['isValid'] = false;
             boxes[box]![index]['error'] = null;
 
-            _disposeDescController('${box}_$index');
-
-            AppDesign.showImageInvalidSnackBar(context, "الصورة غير صالحة!");
+            AppDesign.showImageInvalidSnackBar(
+              context,
+              "الصورة غير صالحة!",
+            );
           }
         });
       } else {
@@ -726,28 +467,10 @@ Reject if:
         });
       }
     } catch (e) {
-      if (!mounted) return;
-
       setState(() {
         boxes[box]![index]['error'] = "فشل الفحص: $e";
       });
     }
-  }
-
-  // ============================================================
-  // التحقق (الوصف إجباري)
-  // ============================================================
-
-  bool _isItemComplete(Map<String, dynamic> item) {
-    if (!_hasImage(item)) return false;
-    if (item['type'] == null) return false;
-    if (item['isValid'] != true) return false;
-    if (item['type'] == "حذاء" && item['size'] == null) return false;
-
-    final desc = (item['description'] ?? '').toString().trim();
-    if (desc.isEmpty) return false;
-
-    return true;
   }
 
   bool _isAllDataComplete() {
@@ -759,7 +482,12 @@ Reject if:
 
     for (final boxItems in boxes.values) {
       for (final item in boxItems) {
-        if (!_isItemComplete(item)) return false;
+        if (item['image'] == null ||
+            item['type'] == null ||
+            item['isValid'] != true ||
+            (item['type'] == "حذاء" && item['size'] == null)) {
+          return false;
+        }
       }
     }
 
@@ -770,7 +498,10 @@ Reject if:
     final items = boxes[box] ?? [];
 
     for (final item in items) {
-      if (!_isItemComplete(item)) return false;
+      if (item['image'] == null) return false;
+      if (item['type'] == null) return false;
+      if (item['isValid'] != true) return false;
+      if (item['type'] == "حذاء" && item['size'] == null) return false;
     }
 
     return true;
@@ -781,8 +512,7 @@ Reject if:
 
     if (!_validateOpenedBox(openedBox!)) {
       AppDesign.showErrorSnackBar(
-        context,
-        'يرجى إكمال جميع بيانات الصندوق أولاً',
+  context,'يرجى إكمال جميع بيانات الصندوق أولاً',
       );
       return;
     }
@@ -801,16 +531,10 @@ Reject if:
     });
   }
 
-  // ============================================================
-  // حفظ التغييرات
-  // الصناديق في donation_boxes والقطع في items (كل قطعة دوكمنت)
-  // ============================================================
-
   Future<void> _saveChanges() async {
     if (!_isAllDataComplete()) {
       AppDesign.showErrorSnackBar(
-        context,
-        'يرجى إكمال جميع الحقول والقطع أولاً',
+  context,'يرجى إكمال جميع الحقول والقطع أولاً',
       );
       return;
     }
@@ -823,59 +547,12 @@ Reject if:
 
     if (!confirm) return;
 
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      AppDesign.showErrorSnackBar(context, 'يجب تسجيل الدخول أولاً');
-      return;
-    }
-
     setState(() => isSaving = true);
 
     try {
-      // 1) رفع الصور الجديدة (القديمة نحتفظ برابطها ومسارها)
-      final int stamp = DateTime.now().millisecondsSinceEpoch;
-      final Map<int, List<Map<String, String>>> uploaded = {};
-      final Set<String> newPaths = {};
+      final user = FirebaseAuth.instance.currentUser;
 
-      for (final entry in boxes.entries) {
-        final int boxNumber = entry.key;
-        final items = entry.value;
-
-        uploaded[boxNumber] = [];
-
-        for (int i = 0; i < items.length; i++) {
-          final e = items[i];
-
-          final String existingUrl = (e['imageUrl'] ?? '').toString();
-
-          if (existingUrl.isNotEmpty) {
-            uploaded[boxNumber]!.add({
-              'url': existingUrl,
-              'path': (e['imagePath'] ?? '').toString(),
-            });
-          } else {
-            final path =
-                'donations/${widget.donationId}/boxes/box_$boxNumber/item_${i}_$stamp.jpg';
-
-            final up = await uploadImage(e['image'] as Uint8List, path);
-
-            uploaded[boxNumber]!.add(up);
-          }
-
-          final p = uploaded[boxNumber]!.last['path'] ?? '';
-          if (p.isNotEmpty) newPaths.add(p);
-        }
-      }
-
-      // 2) كل شي في batch واحد: حذف القديم + كتابة الجديد
-      final batch = firestore.batch();
-
-      final donationRef = firestore
-          .collection('donations')
-          .doc(widget.donationId);
-
-      batch.update(donationRef, {
+      await firestore.collection('donations').doc(widget.donationId).update({
         'gender': selectedGender,
         'ageGroup': selectedAgeGroup!['label'],
         'numberOfItems': totalItems,
@@ -884,89 +561,55 @@ Reject if:
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      final oldItems = await firestore
-          .collection('items')
-          .where('donationId', isEqualTo: widget.donationId)
-          .get();
-
-      for (final d in oldItems.docs) {
-        batch.delete(d.reference);
-      }
-
       final oldBoxes = await firestore
           .collection('donation_boxes')
           .where('donationId', isEqualTo: widget.donationId)
           .get();
 
-      for (final d in oldBoxes.docs) {
-        batch.delete(d.reference);
+      for (final doc in oldBoxes.docs) {
+        await doc.reference.delete();
       }
 
-      for (final entry in boxes.entries) {
-        final int boxNumber = entry.key;
-        final items = entry.value;
+  for (final entry in boxes.entries) {
+  final int boxNumber = entry.key;
+  final List<Map<String, dynamic>> items = entry.value;
 
-        final boxRef = firestore.collection('donation_boxes').doc();
+  final uploadedItems = [];
 
-        batch.set(boxRef, {
-          'donationId': widget.donationId,
-          'donorId': user.uid,
-          'boxNumber': boxNumber,
-          'gender': selectedGender,
-          'ageGroup': {
-            'label': selectedAgeGroup!['label'],
-            'min': selectedAgeGroup!['min'],
-            'max': selectedAgeGroup!['max'],
-          },
-          'generalSize': generalSize ?? "",
-          'status': 'draft',
-          'itemsCount': items.length,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
+  for (final e in items) {
+    String imageUrl = '';
 
-        for (int i = 0; i < items.length; i++) {
-          final e = items[i];
-          final itemRef = firestore.collection('items').doc();
+   if (e['image'] != null) {
+  if (e['imageUrl'] != null &&
+      e['imageUrl'].toString().isNotEmpty) {
+    imageUrl = e['imageUrl'];
+  } else {
+    imageUrl = await uploadImage(e['image']);
+  }
+}
+    uploadedItems.add({
+      'type': e['type'],
+      'size': e['type'] == "حذاء" ? e['size'] : null,
+      'imageUrl': imageUrl,
+    });
+  }
 
-          batch.set(itemRef, {
-            'boxId': boxRef.id, // ربط بالصندوق
-            'donationId': widget.donationId, // ربط بالتبرع
-            'donorId': user.uid,
-            'boxNumber': boxNumber,
-            'itemNumber': i + 1,
-            'type': e['type'],
-            'size': e['type'] == "حذاء" ? e['size'] : null,
-            'description': (e['description'] ?? '').toString().trim(),
-            'imageUrl': uploaded[boxNumber]![i]['url'],
-            'imagePath': uploaded[boxNumber]![i]['path'],
-            'status': 'draft',
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-        }
-      }
-
-      await batch.commit();
-
-      // 3) نحدّث الحالة المحلية عشان أي حفظ ثاني يعيد استخدام الصور
-      for (final entry in boxes.entries) {
-        for (int i = 0; i < entry.value.length; i++) {
-          entry.value[i]['imageUrl'] = uploaded[entry.key]![i]['url'];
-          entry.value[i]['imagePath'] = uploaded[entry.key]![i]['path'];
-        }
-      }
-
-      // 4) نحذف من Storage الصور اللي ما عادت مستخدمة
-      final unused = _originalImagePaths.difference(newPaths);
-
-      for (final p in unused) {
-        try {
-          await FirebaseStorage.instance.ref().child(p).delete();
-        } catch (e) {
-          debugPrint('Storage cleanup error: $e');
-        }
-      }
-
-      _originalImagePaths = newPaths;
+  await firestore.collection('donation_boxes').add({
+    'donationId': widget.donationId,
+    'userId': user?.uid,
+    'boxNumber': boxNumber,
+    'gender': selectedGender,
+    'ageGroup': {
+      'label': selectedAgeGroup!['label'],
+      'min': selectedAgeGroup!['min'],
+      'max': selectedAgeGroup!['max'],
+    },
+    'generalSize': generalSize ?? "",
+    'status': 'draft',
+    'items': uploadedItems,
+    'timestamp': FieldValue.serverTimestamp(),
+  });
+}
 
       if (!mounted) return;
 
@@ -975,14 +618,17 @@ Reject if:
         changesSaved = true;
       });
 
-      AppDesign.showSuccessSnackBar(context, 'تم حفظ التغييرات بنجاح');
+      AppDesign.showSuccessSnackBar(
+  context,
+  'تم حفظ التغييرات بنجاح',
+);
     } catch (e) {
       if (!mounted) return;
       setState(() => isSaving = false);
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('فشل حفظ التغييرات: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل حفظ التغييرات: $e')),
+      );
     }
   }
 
@@ -999,31 +645,32 @@ Reject if:
 
   Future<void> _finishAndGoBack() async {
     AppDesign.showSuccessSnackBar(
-      context,
-      'تم تعديل التبرع بنجاح ',
-      duration: Duration(seconds: 1),
-    );
+  context,
+  'تم تعديل التبرع بنجاح ',
+        duration: Duration(seconds: 1),
+      );
+   
 
     await Future.delayed(const Duration(milliseconds: 800));
     _goToViewDonation();
   }
 
   Future<void> _showBackDialog() async {
-    if (changesSaved) {
-      Navigator.pop(context);
-      return;
-    }
-
-    final confirm = await AppDesign.showAppDialog(
-      context: context,
-      title: 'الرجوع',
-      message: 'لن يتم حفظ التغييرات الحالية، هل تريد الرجوع؟',
-    );
-
-    if (confirm && mounted) {
-      Navigator.pop(context);
-    }
+  if (changesSaved) {
+    Navigator.pop(context);
+    return;
   }
+
+  final confirm = await AppDesign.showAppDialog(
+    context: context,
+    title: 'الرجوع',
+    message: 'لن يتم حفظ التغييرات الحالية، هل تريد الرجوع؟',
+  );
+
+  if (confirm && mounted) {
+    Navigator.pop(context);
+  }
+}
 
   Widget _buildTopInfoCard() {
     return Container(
@@ -1032,7 +679,10 @@ Reject if:
       decoration: BoxDecoration(
         color: AppDesign.background,
         borderRadius: BorderRadius.circular(AppDesign.radiusXL),
-        border: Border.all(color: AppDesign.border, width: 1),
+        border: Border.all(
+          color: AppDesign.border,
+          width: 1,
+        ),
       ),
       child: Directionality(
         textDirection: TextDirection.rtl,
@@ -1056,7 +706,9 @@ Reject if:
               child: Text(
                 'يمكنك تعديل بيانات التبرع والصناديق ثم حفظ التغييرات.',
                 textAlign: TextAlign.right,
-                style: AppDesign.bodySecondaryStyle.copyWith(height: 1.5),
+                style: AppDesign.bodySecondaryStyle.copyWith(
+                  height: 1.5,
+                ),
               ),
             ),
           ],
@@ -1071,7 +723,8 @@ Reject if:
     return GestureDetector(
       onTap: () {
         if (!canOpenBox()) {
-          AppDesign.showErrorSnackBar(context, 'يرجى إكمال جميع الحقول');
+          AppDesign.showErrorSnackBar(
+      context,'يرجى إكمال جميع الحقول');
           return;
         }
 
@@ -1086,7 +739,10 @@ Reject if:
           gradient: LinearGradient(
             colors: isSaved
                 ? [AppDesign.success, AppDesign.primary]
-                : [AppDesign.softGreen.withOpacity(0.2), AppDesign.softGreen],
+                : [
+                    AppDesign.softGreen.withOpacity(0.2),
+                    AppDesign.softGreen,
+                  ],
           ),
         ),
         child: Center(
@@ -1147,52 +803,48 @@ Reject if:
                       borderRadius: BorderRadius.circular(AppDesign.radiusSM),
                       border: Border.all(color: AppDesign.border),
                     ),
-                    child: item['image'] != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              AppDesign.radiusSM,
-                            ),
-                            child: Image.memory(
-                              item['image'] as Uint8List,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: double.infinity,
-                            ),
-                          )
-                        : item['imageUrl'] != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              AppDesign.radiusSM,
-                            ),
-                            child: Image.network(
-                              item['imageUrl'],
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: double.infinity,
-                              errorBuilder: (_, __, ___) {
-                                return const Icon(Icons.broken_image);
-                              },
-                            ),
-                          )
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.upload_file_rounded,
-                                color: AppDesign.primary,
-                                size: AppDesign.iconLG,
-                              ),
-                              AppGap.xs,
-                              Text(
-                                "انقر لرفع الصورة",
-                                textAlign: TextAlign.center,
-                                style: AppDesign.captionStyle.copyWith(
-                                  color: AppDesign.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
+                   child: item['image'] != null
+    ? ClipRRect(
+        borderRadius: BorderRadius.circular(AppDesign.radiusSM),
+        child: Image.memory(
+          item['image'] as Uint8List,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        ),
+      )
+    : item['imageUrl'] != null
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(AppDesign.radiusSM),
+            child: Image.network(
+              item['imageUrl'],
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (_, __, ___) {
+                return const Icon(Icons.broken_image);
+              },
+            ),
+          )
+        : Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.upload_file_rounded,
+                color: AppDesign.primary,
+                size: AppDesign.iconLG,
+              ),
+              AppGap.xs,
+              Text(
+                "انقر لرفع الصورة",
+                textAlign: TextAlign.center,
+                style: AppDesign.captionStyle.copyWith(
+                  color: AppDesign.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
                   ),
                 ),
                 AppGap.wMD,
@@ -1206,26 +858,26 @@ Reject if:
                           filled: true,
                           fillColor: AppDesign.surface,
                         ),
-                        items:
-                            const [
-                                  "قميص",
-                                  "بنطلون",
-                                  "فستان",
-                                  "معطف",
-                                  "حذاء",
-                                  "حقيبة",
-                                  "قبعة",
-                                ]
-                                .map(
-                                  (e) => DropdownMenuItem<String>(
-                                    value: e,
-                                    child: Text(e),
-                                  ),
-                                )
-                                .toList(),
+                        items: const [
+                          "قميص",
+                          "بنطلون",
+                          "فستان",
+                          "معطف",
+                          "حذاء",
+                          "حقيبة",
+                          "قبعة",
+                        ]
+                            .map(
+                              (e) => DropdownMenuItem<String>(
+                                value: e,
+                                child: Text(e),
+                              ),
+                            )
+                            .toList(),
                         onChanged: (v) => setState(() {
                           boxes[openedBox]![idx]['type'] = v;
                           boxes[openedBox]![idx]['size'] = null;
+
 
                           savedBoxes.remove(openedBox);
                           changesSaved = false;
@@ -1240,7 +892,10 @@ Reject if:
                             filled: true,
                             fillColor: AppDesign.surface,
                           ),
-                          items: List.generate(28, (i) => (20 + i).toString())
+                          items: List.generate(
+                            28,
+                            (i) => (20 + i).toString(),
+                          )
                               .map(
                                 (e) => DropdownMenuItem<String>(
                                   value: e,
@@ -1262,40 +917,13 @@ Reject if:
                 ),
               ],
             ),
-
-            // ==================================================
-            // وصف القطعة (يظهر بعد وجود صورة، وإجباري)
-            // ==================================================
-            if (_hasImage(item)) ...[
-              AppGap.sm,
-              TextField(
-                controller: _descCtrl(openedBox!, idx),
-                maxLines: 2,
-                maxLength: 200,
-                onChanged: (v) {
-                  setState(() {
-                    boxes[openedBox]![idx]['description'] = v;
-                    savedBoxes.remove(openedBox);
-                    changesSaved = false;
-                  });
-                },
-                decoration: InputDecoration(
-                  labelText: "وصف القطعة",
-                  hintText: "مثال: لون، حالة القطعة، الماركة...",
-                  filled: true,
-                  fillColor: AppDesign.surface,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
-
             if (item['error'] != null) ...[
               AppGap.sm,
               Text(
                 item['error'] ?? '',
-                style: AppDesign.captionStyle.copyWith(color: AppDesign.error),
+                style: AppDesign.captionStyle.copyWith(
+                  color: AppDesign.error,
+                ),
               ),
             ],
           ],
@@ -1311,42 +939,48 @@ Reject if:
     return InputDecoration(
       labelText: label,
       errorText: label == "إجمالي عدد القطع" ? itemCountError : null,
-      prefixIcon: Icon(icon, color: AppDesign.primary),
+      prefixIcon: Icon(
+        icon,
+        color: AppDesign.primary,
+      ),
       filled: true,
       fillColor: AppDesign.surface,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesign.radiusLG),
-        borderSide: const BorderSide(color: AppDesign.border, width: 1),
+        borderSide: const BorderSide(
+          color: AppDesign.border,
+          width: 1,
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesign.radiusLG),
-        borderSide: const BorderSide(color: AppDesign.primary, width: 1.2),
+        borderSide: const BorderSide(
+          color: AppDesign.primary,
+          width: 1.2,
+        ),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesign.radiusLG),
-        borderSide: const BorderSide(color: AppDesign.error, width: 1),
+        borderSide: const BorderSide(
+          color: AppDesign.error,
+          width: 1,
+        ),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesign.radiusLG),
-        borderSide: const BorderSide(color: AppDesign.error, width: 1.2),
+        borderSide: const BorderSide(
+          color: AppDesign.error,
+          width: 1.2,
+        ),
       ),
       disabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesign.radiusLG),
-        borderSide: const BorderSide(color: AppDesign.border, width: 1),
+        borderSide: const BorderSide(
+          color: AppDesign.border,
+          width: 1,
+        ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _itemCountController.dispose();
-
-    for (final c in _descControllers.values) {
-      c.dispose();
-    }
-    _descControllers.clear();
-
-    super.dispose();
   }
 
   @override
@@ -1357,7 +991,9 @@ Reject if:
         appBar: AppBar(
           title: Text(
             'تعديل التبرع',
-            style: AppDesign.h2Style.copyWith(color: AppDesign.textPrimary),
+            style: AppDesign.h2Style.copyWith(
+              color: AppDesign.textPrimary,
+            ),
           ),
           centerTitle: true,
           backgroundColor: AppDesign.background,
@@ -1417,21 +1053,19 @@ Reject if:
                       onChanged: inputsLocked
                           ? null
                           : (v) => setState(() {
-                              selectedAgeGroup = v;
-                              changesSaved = false;
+                                selectedAgeGroup = v;
+                                changesSaved = false;
 
-                              if (!ageNeedsSize()) {
-                                generalSize = null;
-                              }
-                            }),
+                                if (!ageNeedsSize()) {
+                                  generalSize = null;
+                                }
+                              }),
                     ),
 
                     if (ageNeedsSize()) ...[
                       AppGap.lg,
                       DropdownButtonFormField<String>(
-                        value: sizeRanges.contains(generalSize)
-                            ? generalSize
-                            : null,
+                          value: sizeRanges.contains(generalSize) ? generalSize : null,
                         decoration: _sharedInputDecoration(
                           label: "المقاس",
                           icon: Icons.straighten,
@@ -1458,13 +1092,11 @@ Reject if:
                     TextField(
                       controller: _itemCountController,
                       keyboardType: TextInputType.number,
-                      onEditingComplete: () {
-                        if (!inputsLocked) {
-                          _updateItemCount(_itemCountController.text);
-                        }
-                      },
+                      onChanged: inputsLocked ? null : _updateItemCount,
                       enabled: !inputsLocked,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
                       decoration: _sharedInputDecoration(
                         label: "إجمالي عدد القطع",
                         icon: Icons.format_list_numbered_rounded,
@@ -1490,11 +1122,11 @@ Reject if:
                             itemCount: totalBoxes,
                             gridDelegate:
                                 const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  mainAxisSpacing: AppDesign.spaceMD,
-                                  crossAxisSpacing: AppDesign.spaceMD,
-                                  childAspectRatio: 1,
-                                ),
+                              crossAxisCount: 3,
+                              mainAxisSpacing: AppDesign.spaceMD,
+                              crossAxisSpacing: AppDesign.spaceMD,
+                              childAspectRatio: 1,
+                            ),
                             itemBuilder: (context, idx) {
                               final boxNum = idx + 1;
                               return _buildBoxTile(boxNum);
@@ -1533,16 +1165,14 @@ Reject if:
                           ),
                           AppGap.sm,
                           ...boxes[openedBox]!.asMap().entries.map(
-                            (entry) => _buildItemCard(entry.key, entry.value),
-                          ),
+                                (entry) =>
+                                    _buildItemCard(entry.key, entry.value),
+                              ),
                           AppGap.md,
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              // معطّل لين تكتمل كل بيانات الصندوق
-                              onPressed: _validateOpenedBox(openedBox!)
-                                  ? _markCurrentBoxDone
-                                  : null,
+                              onPressed: _markCurrentBoxDone,
                               child: const Text("حفظ الصندوق"),
                             ),
                           ),
@@ -1555,8 +1185,7 @@ Reject if:
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed:
-                              savedBoxes.length == totalBoxes &&
+                          onPressed: savedBoxes.length == totalBoxes &&
                                   totalBoxes > 0 &&
                                   !isSaving &&
                                   !changesSaved
@@ -1578,8 +1207,8 @@ Reject if:
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: changesSaved && !isSaving
-                              ? () => Navigator.pop(context, true)
-                              : null,
+                            ? () => Navigator.pop(context, true)
+                            : null,
                           child: const Text("تم"),
                         ),
                       ),
