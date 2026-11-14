@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'app_design.dart';
 import 'Beneficiary_more_page.dart';
-import 'Beneficiary_view_donation_page.dart';
+import 'Beneficiary_view_item_page.dart';
 import 'Beneficiary_request_page.dart';
 import 'Beneficiary_cart_page.dart';
 
@@ -1372,7 +1372,7 @@ class ClothesBoxCard extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => BeneficiaryViewDonationPage(
+                            builder: (_) => BeneficiaryViewItemPage(
                               itemId: itemId,
                               boxId: boxId,
                               userId: userId,
