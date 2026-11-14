@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pdf/pdf.dart';
 import 'app_design.dart';
 import 'edit_donation_page.dart';
@@ -13,10 +15,7 @@ import 'package:printing/printing.dart';
 class ViewDonationPage extends StatefulWidget {
   final String userId;
 
-  const ViewDonationPage({
-    super.key,
-    required this.userId,
-  });
+  const ViewDonationPage({super.key, required this.userId});
 
   @override
   State<ViewDonationPage> createState() => _ViewDonationPageState();
@@ -44,7 +43,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   }
 
   String _formatStatus(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.trim().toLowerCase()) {
       case 'draft':
         return 'مسودة';
       case 'published':
@@ -54,7 +53,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       case 'reserved':
         return 'محجوز';
       case 'delivered':
-        return 'تم التسليم';
+        return 'تم التوصيل';
       default:
         return status;
     }
@@ -72,91 +71,105 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   }
 
   Color _statusBackground(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.trim().toLowerCase()) {
       case 'draft':
-        return AppDesign.warning.withOpacity(0.35);
+        return AppDesign.warning.withValues(alpha: 0.35);
       case 'published':
-        return AppDesign.softGreen.withOpacity(0.20);
+        return AppDesign.softGreen.withValues(alpha: 0.20);
       case 'available':
-        return AppDesign.secondary.withOpacity(0.18);
+        return AppDesign.secondary.withValues(alpha: 0.18);
       case 'reserved':
-        return AppDesign.warning.withOpacity(0.35);
+        return AppDesign.warning.withValues(alpha: 0.35);
       case 'delivered':
-        return AppDesign.softGreen.withOpacity(0.20);
+        return AppDesign.softGreen.withValues(alpha: 0.20);
       default:
         return AppDesign.surfaceAlt;
     }
   }
 
   Color _statusTextColor(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.trim().toLowerCase()) {
       case 'draft':
         return AppDesign.primary;
       case 'published':
-        return AppDesign.success;
       case 'available':
-        return AppDesign.primary;
       case 'reserved':
-        return AppDesign.primary;
       case 'delivered':
-        return AppDesign.success;
+        return AppDesign.primary;
       default:
         return AppDesign.textPrimary;
     }
   }
 
   String formatBoxStatus(String status) {
-  switch (status.toLowerCase()) {
-    case 'draft':
-      return 'مسودة';
-    case 'published':
-      return 'مؤكد';
-    case 'available':
-      return 'متاح';
-    case 'reserved':
-      return 'تم الطلب'; // ✅ التعديل هنا
-    case 'delivered':
-      return 'تم التسليم';
-    default:
-      return status;
+    switch (status.trim().toLowerCase()) {
+      case 'draft':
+        return 'مسودة';
+      case 'published':
+        return 'مؤكد';
+      case 'available':
+        return 'متاح';
+      case 'reserved':
+        return 'تم الطلب';
+      case 'delivered':
+        return 'تم التوصيل';
+      default:
+        return status;
+    }
   }
-}
 
-
-IconData getBoxStatusIcon(String status) {
-  switch (status.toLowerCase()) {
-    case 'draft':
-      return Icons.edit_note_outlined;
-    case 'published':
-      return Icons.check_circle_outline;
-    case 'available':
-      return Icons.inventory_2_outlined;
-    case 'reserved':
-      return Icons.assignment_turned_in_outlined; // تم الطلب
-    case 'delivered':
-      return Icons.local_shipping_outlined;
-    default:
-      return Icons.info_outline;
+  IconData getBoxStatusIcon(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'draft':
+        return Icons.edit_note_outlined;
+      case 'published':
+        return Icons.check_circle_outline;
+      case 'available':
+        return Icons.inventory_2_outlined;
+      case 'reserved':
+        return Icons.assignment_turned_in_outlined; // تم الطلب
+      case 'delivered':
+        return Icons.local_shipping_outlined;
+      default:
+        return Icons.info_outline;
+    }
   }
-}
 
+  /// لون الحالة: مصدر واحد لكل المستويات (تبرع / صندوق / قطعة)
+  Color getBoxStatusColor(String status) => AppDesign.primary;
 
-Color getBoxStatusColor(String status) {
-  switch (status.toLowerCase()) {
-    case 'draft':
-      return AppDesign.warning;
-    case 'published':
-      return AppDesign.primary;
-    case 'available':
-      return AppDesign.softGreen;
-    case 'reserved':
-      return AppDesign.secondary;
-    case 'delivered':
-      return AppDesign.success;
-    default:
-      return AppDesign.textSecondary;
+  /// شارة حالة موحّدة (نفس الألوان والشكل في كل مكان)
+  Widget _statusPill(String status, {bool compact = true}) {
+    final fg = _statusTextColor(status);
+    return Container(
+      constraints: BoxConstraints(minHeight: compact ? 28 : 44),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 16,
+        vertical: compact ? 4 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: _statusBackground(status),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        textDirection: TextDirection.rtl,
+        children: [
+          Icon(getBoxStatusIcon(status), size: compact ? 15 : 18, color: fg),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              formatBoxStatus(status),
+              style: AppDesign.captionStyle.copyWith(
+                color: fg,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
-}
 
   Widget _chip(IconData icon, String text) {
     return Container(
@@ -186,101 +199,147 @@ Color getBoxStatusColor(String status) {
     );
   }
 
-Widget _infoRow(
-  IconData icon,
-  String title,
-  String value,
-) {
-  return Row(
-    textDirection: TextDirection.rtl,
-    children: [
-      Icon(
-        icon,
-        size: 20,
-        color: AppDesign.primary,
-      ),
-
-      const SizedBox(width: 8),
-
-      Text(
-        title,
-        style: AppDesign.captionStyle.copyWith(
-          color: AppDesign.textSecondary,
-        ),
-      ),
-
-      const SizedBox(width: 12),
-
-      Text(
-        value,
-        style: AppDesign.bodyStyle.copyWith(
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    ],
-  );
-}
-Widget _deliveryChip(String method) {
-  return Container(
-    padding: const EdgeInsets.symmetric(
-      horizontal: 16,
-      vertical: 14,
-    ),
-    decoration: BoxDecoration(
-      color: AppDesign.surface,
-      borderRadius: BorderRadius.circular(AppDesign.radiusMD),
-      border: Border.all(color: AppDesign.border),
-    ),
-    child: Row(
+  Widget _infoRow(IconData icon, String title, String value) {
+    return Row(
       textDirection: TextDirection.rtl,
       children: [
-
-        const Icon(
-          Icons.local_shipping_outlined,
-          color: AppDesign.primary,
-          size: 20,
-        ),
-
+        Icon(icon, size: 20, color: AppDesign.primary),
         const SizedBox(width: 8),
-
         Text(
-          "طريقة التوصيل",
+          title,
           style: AppDesign.captionStyle.copyWith(
             color: AppDesign.textSecondary,
           ),
         ),
-
         const SizedBox(width: 12),
-
         Text(
-          method,
-          style: AppDesign.bodyStyle.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          value,
+          style: AppDesign.bodyStyle.copyWith(fontWeight: FontWeight.w700),
         ),
       ],
-    ),
-  );
-}
-  String generateBoxCode(String boxId, int boxNumber) {
-  final shortId = boxId.substring(0, 5).toUpperCase();
-  return "BOX$boxNumber-$shortId";
-}
+    );
+  }
+
+  Widget _deliveryChip(String method, {Widget? trailing}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppDesign.surface,
+        borderRadius: BorderRadius.circular(AppDesign.radiusMD),
+        border: Border.all(color: AppDesign.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            textDirection: TextDirection.rtl,
+            children: [
+              const Icon(
+                Icons.local_shipping_outlined,
+                color: AppDesign.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              // Wrap: إذا ما كفى العرض، القيمة تنزل سطر جديد بدل ما تنضغط
+              Expanded(
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      "طريقة التوصيل",
+                      style: AppDesign.captionStyle.copyWith(
+                        color: AppDesign.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      method,
+                      style: AppDesign.bodyStyle.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (trailing != null) ...[const SizedBox(height: 12), trailing],
+        ],
+      ),
+    );
+  }
+
+  /// زر مسح الباركود لتأكيد التسليم للمستودع (بعرض كامل، يتكيف مع الشاشة)
+  Widget _scanSquareButton(String donationId) {
+    return Material(
+      color: AppDesign.primary,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => DropoffScanPage(donationId: donationId),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            textDirection: TextDirection.rtl,
+            children: [
+              const Icon(
+                Icons.qr_code_scanner_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'امسح الباركود لتأكيد التسليم للمستودع',
+                  textAlign: TextAlign.center,
+                  style: AppDesign.captionStyle.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String generateBoxCode(int boxNumber) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final random = Random();
+    return List.generate(
+      10,
+      (index) => chars[random.nextInt(chars.length)],
+    ).join();
+  }
 
   Future<void> _deleteDonation(String docId) async {
- final confirm = await AppDesign.showAppDialog(
-  context: context,
-  title: 'حذف التبرع',
-  message: 'هل أنت متأكد من حذف هذا التبرع؟\n\n! لا يمكنك التراجع عن الحذف',);
+    final confirm = await AppDesign.showAppDialog(
+      context: context,
+      title: 'حذف التبرع',
+      message: 'هل أنت متأكد من حذف هذا التبرع؟\n\n! لا يمكنك التراجع عن الحذف',
+    );
     if (confirm != true) return;
 
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
 
       if (currentUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('يجب تسجيل الدخول أولاً')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('يجب تسجيل الدخول أولاً')));
         return;
       }
 
@@ -290,14 +349,14 @@ Widget _deliveryChip(String method) {
           .get();
 
       if (!donationDoc.exists) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('التبرع غير موجود')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('التبرع غير موجود')));
         return;
       }
 
       final donationData = donationDoc.data() as Map<String, dynamic>;
-      final donorId = donationData['donorID']?.toString();
+      final donorId = donationData['donorId']?.toString();
 
       if (donorId != currentUser.uid) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -306,6 +365,17 @@ Widget _deliveryChip(String method) {
         return;
       }
 
+      // حذف القطع (كولكشن items)
+      final itemsSnapshot = await FirebaseFirestore.instance
+          .collection('items')
+          .where('donationId', isEqualTo: docId)
+          .get();
+
+      for (final itemDoc in itemsSnapshot.docs) {
+        await itemDoc.reference.delete();
+      }
+
+      // حذف الصناديق
       final boxesSnapshot = await FirebaseFirestore.instance
           .collection('donation_boxes')
           .where('donationId', isEqualTo: docId)
@@ -322,46 +392,44 @@ Widget _deliveryChip(String method) {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حذف التبرع بنجاح')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم حذف التبرع بنجاح')));
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل حذف التبرع: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل حذف التبرع: $e')));
     }
   }
 
-Future<void> _moveDraftToConfirmed(String docId) async {
-  final confirm = await AppDesign.showAppDialog(
-    context: context,
-    title: 'تأكيد التبرع',
-    message: 'هل تريد اتمام هذا التبرع؟\n\n! بعد التأكيد لن تتمكن من التعديل أو الحذف',
-  );
-
-  if (confirm != true) return;
-
-  try {
-    // تحديث التاريخ والحالة في Firestore قبل الانتقال لصفحة التوصيل
-    await FirebaseFirestore.instance
-        .collection('donations')
-        .doc(docId)
-        .update({
-      'updatedAt': FieldValue.serverTimestamp(), // تحديث وقت التأكيد
-    });
-
-    if (!mounted) return;
-    
-    Navigator.pushNamed(
-      context, '/deliveryMethod',
-      arguments: docId,
+  Future<void> _moveDraftToConfirmed(String docId) async {
+    final confirm = await AppDesign.showAppDialog(
+      context: context,
+      title: 'تأكيد التبرع',
+      message:
+          'هل تريد اتمام هذا التبرع؟\n\n! بعد التأكيد لن تتمكن من التعديل أو الحذف',
     );
-  } catch (e) {
-    debugPrint("Error updating donation: $e");
+
+    if (confirm != true) return;
+
+    try {
+      // تحديث التاريخ والحالة في Firestore قبل الانتقال لصفحة التوصيل
+      await FirebaseFirestore.instance
+          .collection('donations')
+          .doc(docId)
+          .update({
+            'updatedAt': FieldValue.serverTimestamp(), // تحديث وقت التأكيد
+          });
+
+      if (!mounted) return;
+
+      Navigator.pushNamed(context, '/donorDelivery', arguments: docId);
+    } catch (e) {
+      debugPrint("Error updating donation: $e");
+    }
   }
-}
 
   Future<void> _openEditDonation(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
@@ -379,9 +447,7 @@ Future<void> _moveDraftToConfirmed(String docId) async {
     );
 
     if (result == true && mounted) {
-      AppDesign.showSuccessSnackBar(
-  context,'تم تحديث التبرع بنجاح',
-      );
+      AppDesign.showSuccessSnackBar(context, 'تم تحديث التبرع بنجاح');
     }
   }
 
@@ -395,10 +461,7 @@ Future<void> _moveDraftToConfirmed(String docId) async {
             child: pw.Column(
               mainAxisSize: pw.MainAxisSize.min,
               children: [
-                pw.Text(
-                  boxCode,
-                  style: pw.TextStyle(fontSize: 42),
-                ),
+                pw.Text(boxCode, style: pw.TextStyle(fontSize: 42)),
                 pw.SizedBox(height: 10),
                 pw.Text("ID: $boxId"),
               ],
@@ -408,117 +471,373 @@ Future<void> _moveDraftToConfirmed(String docId) async {
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (format) async => pdf.save(),
-    );
+    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }
-Future<void> printAllBoxesLabels(List boxes) async {
-  final pdf = pw.Document();
 
-  final logoBytes =
-      (await rootBundle.load('assets/images/logo.png'))
-          .buffer
-          .asUint8List();
+  Future<void> printAllBoxesLabels(List boxes) async {
+    final pdf = pw.Document();
 
-  final logoImage = pw.MemoryImage(logoBytes);
+    final logoBytes = (await rootBundle.load(
+      'assets/images/logo.png',
+    )).buffer.asUint8List();
 
-  pdf.addPage(
-    pw.Page(
-      build: (context) {
-        return pw.Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: boxes.map((box) {
-            final data = box.data() as Map<String, dynamic>;
-            final boxNumber = data['boxNumber'] ?? 0;
-            final boxCode = data['boxCode'] ?? '---';
+    final logoImage = pw.MemoryImage(logoBytes);
 
-           return pw.Container(
-  width: 180,
-  padding: const pw.EdgeInsets.all(12),
-  decoration: pw.BoxDecoration(
-    color: PdfColors.white,
-    borderRadius: pw.BorderRadius.circular(10),
-    border: pw.Border.all(
-      color: PdfColor.fromHex("#0A4D5C"),
-      width: 1.5,
-    ),
-  ),
-  child: pw.Column(
-    crossAxisAlignment: pw.CrossAxisAlignment.center,
-    children: [
+    pdf.addPage(
+      pw.Page(
+        build: (context) {
+          return pw.Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: boxes.map((box) {
+              final data = box.data() as Map<String, dynamic>;
+              final boxCode = (data['boxCode'] ?? '---').toString();
 
-      
-      pw.Image(
-        logoImage,
-        width: 70,
+              return pw.Container(
+                width: 180,
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.white,
+                  borderRadius: pw.BorderRadius.circular(10),
+                  border: pw.Border.all(
+                    color: PdfColor.fromHex("#0A4D5C"),
+                    width: 1.5,
+                  ),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Image(logoImage, width: 70),
+                    pw.SizedBox(height: 8),
+                    pw.Container(height: 1, color: PdfColor.fromHex("#0A4D5C")),
+                    pw.SizedBox(height: 8),
+
+                    // QR فعلي يحتوي نص الـ boxCode (هذا اللي يتم مسحه)
+                    pw.BarcodeWidget(
+                      barcode: pw.Barcode.qrCode(),
+                      data: boxCode,
+                      width: 80,
+                      height: 80,
+                    ),
+                    pw.SizedBox(height: 8),
+
+                    pw.Text(
+                      boxCode,
+                      style: pw.TextStyle(
+                        color: PdfColor.fromHex("#0A4D5C"),
+                        fontSize: 16,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 6),
+                    pw.Text(
+                      "Donation ID",
+                      style: pw.TextStyle(
+                        fontSize: 8,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      (data['donationId'] ?? '').toString(),
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        color: PdfColor.fromHex("#0A4D5C"),
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          );
+        },
       ),
+    );
 
-      pw.SizedBox(height: 8),
+    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+  }
 
-      
-      pw.Container(
-        height: 1,
-        color: PdfColor.fromHex("#0A4D5C"),
-      ),
+  /// هل الصندوق لسا ما تم تسليمه للمستودع؟
+  bool _boxNeedsDropoff(Map<String, dynamic> data) {
+    final s = (data['status'] ?? '').toString().toLowerCase();
+    return s != 'available' &&
+        s != 'reserved' &&
+        s != 'delivered' &&
+        s != 'completed' &&
+        s != 'draft';
+  }
 
-      pw.SizedBox(height: 8),
+  // ============================================================
+  // قطع الصندوق (من كولكشن items، مع دعم الطريقة القديمة)
+  // ============================================================
 
-      
-      pw.Text(
-        boxCode,
-        style: pw.TextStyle(
-          color: PdfColor.fromHex("#0A4D5C"),
-          fontSize: 16,
-          fontWeight: pw.FontWeight.bold,
-        ),
-      ),
+  Widget _buildBoxItems(
+    QueryDocumentSnapshot box, {
+    bool showItemStatus = true,
+  }) {
+    final bData = box.data() as Map<String, dynamic>;
+    final legacy = bData['items'];
 
-      pw.SizedBox(height: 6),
+    // دعم الصناديق القديمة اللي القطع فيها داخل array
+    if (legacy is List && legacy.isNotEmpty) {
+      final list = legacy
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      return _itemsColumn(list, showStatus: showItemStatus);
+    }
 
-      
-      pw.Text(
-        "Donation ID",
-        style: pw.TextStyle(
-          fontSize: 8,
-          color: PdfColors.grey700,
-        ),
-      ),
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('items')
+          .where('boxId', isEqualTo: box.id)
+          .snapshots(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(AppDesign.spaceMD),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-      pw.SizedBox(height: 2),
+        if (snap.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(AppDesign.spaceMD),
+            child: Text('تعذر تحميل القطع', style: AppDesign.captionStyle),
+          );
+        }
 
-      
-      pw.Text(
-        data['donationId'] ?? '',
-        style: pw.TextStyle(
-          fontSize: 9,
-          color: PdfColor.fromHex("#0A4D5C"),
-          fontWeight: pw.FontWeight.bold,
-        ),
-        textAlign: pw.TextAlign.center,
-      ),
-    ],
-  ),
-);
-          }).toList(),
+        final docs = [...(snap.data?.docs ?? [])];
+
+        // ترتيب محلي عشان ما نحتاج index في Firestore
+        docs.sort((a, b) {
+          final an =
+              ((a.data() as Map<String, dynamic>)['itemNumber'] ?? 0) as num;
+          final bn =
+              ((b.data() as Map<String, dynamic>)['itemNumber'] ?? 0) as num;
+          return an.compareTo(bn);
+        });
+
+        if (docs.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(AppDesign.spaceMD),
+            child: Text('لا توجد قطع', style: AppDesign.captionStyle),
+          );
+        }
+
+        return _itemsColumn(
+          docs.map((d) => d.data() as Map<String, dynamic>).toList(),
+          showStatus: showItemStatus,
         );
       },
-    ),
-  );
+    );
+  }
 
-  await Printing.layoutPdf(
-    onLayout: (format) async => pdf.save(),
-  );
-}
+  Widget _itemsColumn(
+    List<Map<String, dynamic>> items, {
+    bool showStatus = true,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(AppDesign.spaceMD),
+      child: Column(
+        children: List.generate(items.length, (index) {
+          final item = items[index];
+
+          final String imageUrl = (item['imageUrl'] ?? '').toString();
+          final String type = (item['type'] ?? '-').toString();
+          final String size = (item['size'] ?? '').toString();
+          final String itemStatus = (item['status'] ?? '').toString().trim();
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: AppDesign.spaceSM),
+            padding: const EdgeInsets.all(AppDesign.spaceSM),
+            decoration: BoxDecoration(
+              color: AppDesign.surface,
+              borderRadius: BorderRadius.circular(AppDesign.radiusMD),
+              border: Border.all(color: AppDesign.border),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                /// 🖼️ صورة القطعة
+                imageUrl.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(AppDesign.radiusSM),
+                        child: Image.network(
+                          imageUrl,
+                          width: 55,
+                          height: 55,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 55,
+                              height: 55,
+                              color: AppDesign.surfaceAlt,
+                              child: const Icon(Icons.broken_image),
+                            );
+                          },
+                        ),
+                      )
+                    : Container(
+                        width: 55,
+                        height: 55,
+                        decoration: BoxDecoration(
+                          color: AppDesign.surfaceAlt,
+                          borderRadius: BorderRadius.circular(
+                            AppDesign.radiusSM,
+                          ),
+                        ),
+                        child: const Icon(Icons.image_not_supported),
+                      ),
+                AppGap.wMD,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "القطعة ${index + 1}",
+                        style: AppDesign.bodyStyle.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        size.isNotEmpty ? '$type - مقاس $size' : type,
+                        style: AppDesign.captionStyle,
+                      ),
+                    ],
+                  ),
+                ),
+
+                /// حالة القطعة (يسار الكارد)
+                if (showStatus && itemStatus.isNotEmpty) ...[
+                  AppGap.wMD,
+                  SizedBox(
+                    height: 55,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          getBoxStatusIcon(itemStatus),
+                          size: 16,
+                          color: AppDesign.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          formatBoxStatus(itemStatus),
+                          style: AppDesign.captionStyle.copyWith(
+                            color: AppDesign.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  /// تحسب من حالات الأيتم: هل كل صندوق تم تسليمه؟ وهل التبرع كامل تم تسليمه؟
+  Widget _withDeliveryInfo({
+    required String donationId,
+    required Widget Function(
+      bool donationDelivered,
+      Map<String, bool> boxDelivered,
+    )
+    builder,
+  }) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('donation_boxes')
+          .where('donationId', isEqualTo: donationId)
+          .snapshots(),
+      builder: (context, boxSnap) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('items')
+              .where('donationId', isEqualTo: donationId)
+              .snapshots(),
+          builder: (context, itemSnap) {
+            final boxDocs = boxSnap.data?.docs ?? [];
+            final itemDocs = itemSnap.data?.docs ?? [];
+
+            final Map<String, List<String>> statusesByBox = {};
+            for (final i in itemDocs) {
+              final d = i.data() as Map<String, dynamic>;
+              final boxId = (d['boxId'] ?? '').toString();
+              statusesByBox
+                  .putIfAbsent(boxId, () => [])
+                  .add((d['status'] ?? '').toString().trim().toLowerCase());
+            }
+
+            final Map<String, bool> boxDelivered = {};
+            for (final b in boxDocs) {
+              final bd = b.data() as Map<String, dynamic>;
+              final legacy = bd['items'];
+
+              final List<String> statuses =
+                  (legacy is List && legacy.isNotEmpty)
+                  ? legacy
+                        .map(
+                          (e) => ((e as Map)['status'] ?? '')
+                              .toString()
+                              .trim()
+                              .toLowerCase(),
+                        )
+                        .toList()
+                  : (statusesByBox[b.id] ?? []);
+
+              boxDelivered[b.id] =
+                  statuses.isNotEmpty &&
+                  statuses.every((s) => s == 'delivered');
+            }
+
+            final bool donationDelivered =
+                boxDocs.isNotEmpty &&
+                boxDocs.every((b) => boxDelivered[b.id] == true);
+
+            return builder(donationDelivered, boxDelivered);
+          },
+        );
+      },
+    );
+  }
 
   Widget _buildDonationCard(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final status = (data['status'] ?? '').toString();
+
+    // المسودات بدون أي تغيير
+    if (_isDraftStatus(status)) {
+      return _buildDonationCardContent(doc, false, const {});
+    }
+
+    return _withDeliveryInfo(
+      donationId: doc.id,
+      builder: (donationDelivered, boxDelivered) =>
+          _buildDonationCardContent(doc, donationDelivered, boxDelivered),
+    );
+  }
+
+  Widget _buildDonationCardContent(
+    DocumentSnapshot doc,
+    bool donationDelivered,
+    Map<String, bool> boxDelivered,
+  ) {
     final data = doc.data() as Map<String, dynamic>;
 
     final String gender = (data['gender'] ?? '-').toString();
     final String ageGroup = (data['ageGroup'] ?? '-').toString();
+    // للعنوان فقط: نشيل الأقواس من الفئة العمرية عشان ما تتداخل
+    final String ageGroupTitle = ageGroup.replaceAll(RegExp(r'[()]'), '').trim();
     final int numberOfItems = (data['numberOfItems'] ?? 0) as int;
-    final String generalSize =
-    (data['generalSize'] ?? '').toString();
+    final String generalSize = (data['generalSize'] ?? '').toString();
     final String status = (data['status'] ?? '-').toString();
     final String deliveryMethod =
         (data['deliveryMethod'] ?? data['deliveryType'] ?? 'غير محدد')
@@ -537,35 +856,20 @@ Future<void> printAllBoxesLabels(List boxes) async {
             children: [
               Expanded(
                 child: Text(
-                  'تبرع ($gender - $ageGroup)',
+                  'تبرع ($gender - $ageGroupTitle)',
                   textAlign: TextAlign.right,
                   style: AppDesign.subtitleStyle.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              const SizedBox(width: AppDesign.spaceSM),
-              Container(
-                constraints: const BoxConstraints(minHeight: 44),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: _statusBackground(status),
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: Center(
-                  child: Text(
-                    _formatStatus(status),
-                    style: AppDesign.captionStyle.copyWith(
-                      color: _statusTextColor(status),
-                      fontWeight: FontWeight.w700,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
+
+              // المسودة: ما تظهر أي حالة
+              // التبرع النشط: تظهر الشارة فقط إذا تم التسليم (محسوبة من الأيتم)
+              if (!isDraft && donationDelivered) ...[
+                const SizedBox(width: AppDesign.spaceSM),
+                _statusPill('delivered', compact: false),
+              ],
               const SizedBox(width: AppDesign.spaceSM),
               Container(
                 width: 44,
@@ -586,57 +890,144 @@ Future<void> printAllBoxesLabels(List boxes) async {
 
           const SizedBox(height: AppDesign.spaceLG),
 
-    Container(
-  padding: const EdgeInsets.all(AppDesign.spaceMD),
-  decoration: BoxDecoration(
-    color: AppDesign.surface,
-    borderRadius: BorderRadius.circular(AppDesign.radiusMD),
-    border: Border.all(color: AppDesign.border),
-  ),
-  child: Column(
-    children: [
+          Container(
+            padding: const EdgeInsets.all(AppDesign.spaceMD),
+            decoration: BoxDecoration(
+              color: AppDesign.surface,
+              borderRadius: BorderRadius.circular(AppDesign.radiusMD),
+              border: Border.all(color: AppDesign.border),
+            ),
+            child: Column(
+              children: [
+                _infoRow(Icons.wc_outlined, "الجنس", gender),
+                const SizedBox(height: 12),
+                _infoRow(Icons.cake_outlined, "الفئة العمرية", ageGroup),
+                if (generalSize.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _infoRow(Icons.straighten_outlined, "المقاس", generalSize),
+                ],
+                const SizedBox(height: 12),
+                _infoRow(
+                  Icons.inventory_2_outlined,
+                  "عدد القطع",
+                  "$numberOfItems قطع",
+                ),
+              ],
+            ),
+          ),
 
-      _infoRow(
-        Icons.wc_outlined,
-        "الجنس",
-        gender,
-      ),
-
-      const SizedBox(height: 12),
-
-      _infoRow(
-        Icons.cake_outlined,
-        "الفئة العمرية",
-        ageGroup,
-      ),
-
-      if (generalSize.isNotEmpty) ...[
-  const SizedBox(height: 12),
-
-  _infoRow(
-    Icons.straighten_outlined,
-    "المقاس",
-    generalSize,
-  ),
-],
-
-      const SizedBox(height: 12),
-
-      _infoRow(
-        Icons.inventory_2_outlined,
-        "عدد القطع",
-        "$numberOfItems قطع",
-      ),
-    ],
-  ),
-),
-
+          // ==================================================
+          // طريقة التوصيل (للتبرعات المؤكدة فقط)
+          // ==================================================
           if (!isDraft) ...[
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: _deliveryChip(_formatDeliveryMethod(deliveryMethod)),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('donation_boxes')
+                  .where('donationId', isEqualTo: doc.id)
+                  .snapshots(),
+              builder: (context, snap) {
+                final boxDocs = snap.data?.docs ?? [];
+
+                // زر المسح: فقط للتوصيل الذاتي وإذا فيه صناديق لسا ما انسلمت
+                final bool showScan =
+                    !donationDelivered &&
+                    deliveryMethod.toLowerCase() == 'self_delivery' &&
+                    boxDocs.any(
+                      (b) => _boxNeedsDropoff(b.data() as Map<String, dynamic>),
+                    );
+
+                final bool isPickup = deliveryMethod.toLowerCase() == 'pickup';
+
+                // بيانات العنوان المرتبط بخيار الاستلام من الموقع
+                final String city = (data['city'] ?? data['donorCity'] ?? '')
+                    .toString()
+                    .trim();
+                final String district =
+                    (data['district'] ??
+                            data['neighborhood'] ??
+                            data['donorDistrict'] ??
+                            '')
+                        .toString()
+                        .trim();
+                final String nationalAddress =
+                    (data['nationalAddress'] ??
+                            data['fullAddress'] ??
+                            data['address'] ??
+                            data['donorNationalAddress'] ??
+                            '')
+                        .toString()
+                        .trim();
+
+                return SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _deliveryChip(
+                        _formatDeliveryMethod(deliveryMethod),
+                        trailing: showScan ? _scanSquareButton(doc.id) : null,
+                      ),
+                      if (isPickup &&
+                          (city.isNotEmpty ||
+                              district.isNotEmpty ||
+                              nationalAddress.isNotEmpty)) ...[
+                        const SizedBox(height: AppDesign.spaceSM),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(AppDesign.spaceMD),
+                          decoration: BoxDecoration(
+                            color: AppDesign.surface,
+                            borderRadius: BorderRadius.circular(
+                              AppDesign.radiusMD,
+                            ),
+                            border: Border.all(color: AppDesign.border),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'عنوان الاستلام',
+                                textAlign: TextAlign.right,
+                                style: AppDesign.captionStyle.copyWith(
+                                  color: AppDesign.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (city.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                _infoRow(
+                                  Icons.location_city_outlined,
+                                  'المدينة',
+                                  city,
+                                ),
+                              ],
+                              if (district.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                _infoRow(Icons.map_outlined, 'الحي', district),
+                              ],
+                              if (nationalAddress.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                _infoRow(
+                                  Icons.home_outlined,
+                                  'العنوان الوطني',
+                                  nationalAddress,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
             ),
+          ],
+
+          // الصناديق وقطعها تظهر في التبرعات النشطة فقط
+          // (المسودة تنعرض وتتعدل من صفحة التعديل)
+          if (!isDraft) ...[
             const SizedBox(height: AppDesign.spaceLG),
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -644,7 +1035,28 @@ Future<void> printAllBoxesLabels(List boxes) async {
                   .where('donationId', isEqualTo: doc.id)
                   .snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.all(AppDesign.spaceMD),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final boxes = [...(snapshot.data?.docs ?? [])];
+
+                // ترتيب الصناديق حسب الرقم
+                boxes.sort((a, b) {
+                  final an =
+                      ((a.data() as Map<String, dynamic>)['boxNumber'] ?? 0)
+                          as num;
+                  final bn =
+                      ((b.data() as Map<String, dynamic>)['boxNumber'] ?? 0)
+                          as num;
+                  return an.compareTo(bn);
+                });
+
+                if (boxes.isEmpty) {
                   return Align(
                     alignment: Alignment.centerRight,
                     child: Text(
@@ -655,200 +1067,99 @@ Future<void> printAllBoxesLabels(List boxes) async {
                   );
                 }
 
-                final boxes = snapshot.data!.docs;
-
                 return Column(
-  crossAxisAlignment: CrossAxisAlignment.end,
-  children: [
-    Align(
-  alignment: Alignment.centerRight,
-  child: Text(
-    " الصناديق",
-    textAlign: TextAlign.right,
-    style: AppDesign.subtitleStyle.copyWith(
-      fontWeight: FontWeight.bold,
-      color: AppDesign.primary,
-    ),
-  ),
-),
-...boxes.map((box) {
-  final data = box.data() as Map<String, dynamic>;
-  final rawStatus = (data['status'] ?? '-').toString();
-  final status = formatBoxStatus(rawStatus);
-  final statusColor = getBoxStatusColor(rawStatus);
-  final statusIcon = getBoxStatusIcon(rawStatus);
-  final boxCode = data['boxCode'] ?? '---';
-  final parts = boxCode.split('-');
-  final leftPart = parts.isNotEmpty ? parts[0] : '';
-  final rightPart = parts.length >= 2 ? parts[1] : '';
-  final items = data['items'] ?? [];
-
-  
-
-  return Container(
-    margin: const EdgeInsets.only(bottom: AppDesign.spaceSM),
-    decoration: AppDesign.softCardDecoration,
-    child: ExpansionTile(
-
-      
-      tilePadding: const EdgeInsets.symmetric(
-        horizontal: AppDesign.spaceMD,
-        vertical: AppDesign.spaceSM,
-      ),
-
-      
-      title: Row(
-        children: [
-
-          
-Row(
-  mainAxisSize: MainAxisSize.min,
-  children: [
-
-    Icon(
-      statusIcon,
-      size: 18,
-      color: statusColor,
-    ),
-
-    const SizedBox(width: 5),
-
-    Text(
-      status,
-      style: AppDesign.captionStyle.copyWith(
-        color: statusColor,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  ],
-),
-
-          AppGap.wMD,
-
-          
-          Expanded(
-            child: RichText(
-            textAlign: TextAlign.left,
-             text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: leftPart,
-                    style: AppDesign.h2Style.copyWith(
-                    color: AppDesign.primary,
-                      fontWeight: FontWeight.bold,
-                  ),
-                 ),
-                TextSpan(
-                text: rightPart.isNotEmpty ? '-$rightPart' : '',
-                style: AppDesign.h2Style.copyWith(
-               color: AppDesign.secondary,
-                fontWeight: FontWeight.bold,
-             ),
-            ),
-          ],
-         ),
-        ),
-              ),
-            ],
-          ),
-
-      
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(AppDesign.spaceMD),
-          child: Column(
-            children: List.generate(items.length, (index) {
-              final item = items[index];
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: AppDesign.spaceSM),
-                padding: const EdgeInsets.all(AppDesign.spaceSM),
-                decoration: BoxDecoration(
-                  color: AppDesign.surface,
-                  borderRadius: BorderRadius.circular(AppDesign.radiusMD),
-                  border: Border.all(color: AppDesign.border),
-                ),
-                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        " الصناديق",
+                        textAlign: TextAlign.right,
+                        style: AppDesign.subtitleStyle.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppDesign.primary,
+                        ),
+                      ),
+                    ),
+                    ...boxes.map((box) {
+                      final bData = box.data() as Map<String, dynamic>;
+                      final boxCode = (bData['boxCode'] ?? '').toString();
+                      final boxNumber = (bData['boxNumber'] ?? '').toString();
 
-                    /// 🖼️ صورة القطعة
-                  (item['imageUrl'] != null &&
-        item['imageUrl'].toString().isNotEmpty)
-    ? ClipRRect(
-        borderRadius: BorderRadius.circular(AppDesign.radiusSM),
-        child: Image.network(
-          item['imageUrl'],
-          width: 55,
-          height: 55,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              width: 55,
-              height: 55,
-              color: AppDesign.surfaceAlt,
-              child: const Icon(Icons.broken_image),
-            );
-          },
-        ),
-      )
-                        : Container(
-                            width: 55,
-                            height: 55,
-                            decoration: BoxDecoration(
-                              color: AppDesign.surfaceAlt,
-                              borderRadius:
-                                  BorderRadius.circular(AppDesign.radiusSM),
+                      // هل كل أيتم هذا الصندوق تم تسليمها؟ (محسوب من الأيتم)
+                      final bool thisBoxDelivered =
+                          boxDelivered[box.id] == true;
+
+                      final String titleText = boxCode.isEmpty
+                          ? 'صندوق $boxNumber'
+                          : boxCode;
+                      return Container(
+                        margin: const EdgeInsets.only(
+                          bottom: AppDesign.spaceSM,
+                        ),
+                        decoration: AppDesign.softCardDecoration,
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(
+                            horizontal: AppDesign.spaceMD,
+                            vertical: AppDesign.spaceSM,
+                          ),
+                          title: Row(
+                            textDirection: TextDirection.rtl,
+                            children: [
+                              // اسم الصندوق على اليمين
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      titleText,
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.visible,
+                                      textDirection: TextDirection.ltr,
+                                      style: AppDesign.h2Style.copyWith(
+                                        color: AppDesign.primary,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              // الحالة على اليسار: "تم التسليم" فقط إذا الصندوق
+                              // مكتمل والتبرع لسا ما اكتمل. إذا التبرع كامل
+                              // تم تسليمه: ما نعرض أي حالة على الصناديق
+                              if (thisBoxDelivered && !donationDelivered) ...[
+                                AppGap.wMD,
+                                _statusPill('delivered'),
+                              ],
+                            ],
+                          ),
+                          children: [
+                            _buildBoxItems(
+                              box,
+                              showItemStatus: !thisBoxDelivered,
                             ),
-                            child: const Icon(Icons.image_not_supported),
-                          ),
+                          ],
+                        ),
+                      );
+                    }),
 
-                    AppGap.wMD,
-
-                    
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "القطعة ${index + 1}",
-                            style: AppDesign.bodyStyle.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            item['type'] ?? '-',
-                            style: AppDesign.captionStyle,
-                          ),
-                        ],
+                    AppGap.md,
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.print),
+                        label: const Text("طباعة جميع الملصقات"),
+                        onPressed: () {
+                          printAllBoxesLabels(boxes);
+                        },
                       ),
                     ),
                   ],
-                ),
-              );
-            }),
-          ),
-        ),
-      ],
-    ),
-  );
-}).toList(),
-
-    
-    AppGap.md,
-
-    SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        icon: const Icon(Icons.print),
-        label: const Text("طباعة جميع الملصقات"),
-        onPressed: () {
-          printAllBoxesLabels(boxes);
-        },
-      ),
-    ),
-  ],
-);
+                );
               },
             ),
           ],
@@ -862,10 +1173,8 @@ Row(
                   child: OutlinedButton.icon(
                     onPressed: () => _openEditDonation(doc),
                     style: ElevatedButton.styleFrom(
-  padding: const EdgeInsets.symmetric(
-    vertical: 10,
-  ),
-),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
                     icon: const Icon(Icons.edit_outlined),
                     label: const Text('تعديل'),
                   ),
@@ -875,9 +1184,7 @@ Row(
                   child: OutlinedButton.icon(
                     onPressed: () => _deleteDonation(doc.id),
                     style: OutlinedButton.styleFrom(
-                       padding: const EdgeInsets.symmetric(
-    vertical: 10,
-  ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                       foregroundColor: AppDesign.error,
                       side: const BorderSide(color: AppDesign.error),
                     ),
@@ -890,10 +1197,8 @@ Row(
                   child: ElevatedButton.icon(
                     onPressed: () => _moveDraftToConfirmed(doc.id),
                     style: ElevatedButton.styleFrom(
-  padding: const EdgeInsets.symmetric(
-    vertical: 10,
-  ),
-),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
                     icon: const Icon(Icons.check),
                     label: const Text('تأكيد'),
                   ),
@@ -910,8 +1215,8 @@ Row(
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('donations')
-          .where('donorID', isEqualTo: widget.userId)
-          .orderBy(sortField, descending: true)         
+          .where('donorId', isEqualTo: widget.userId)
+          .orderBy(sortField, descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -931,11 +1236,15 @@ Row(
 
         final filteredDocs = docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          final status = (data['status'] ?? '').toString();
+          final status = (data['status'] ?? '').toString().trim();
+
+          // تبرع بدون حالة = غير مكتمل (ما انضغط "تم")، ما يظهر في أي تبويب
+          if (status.isEmpty) return false;
+
+          // المسودات: status == draft فقط
+          // النشطة: أي حالة ثانية غير draft
           return draftsOnly ? _isDraftStatus(status) : !_isDraftStatus(status);
         }).toList();
-
-        
 
         if (filteredDocs.isEmpty) {
           return Center(
@@ -1034,8 +1343,10 @@ Row(
           ),
           NavigationDestination(
             icon: Icon(Icons.more_horiz_rounded, color: AppDesign.primary),
-            selectedIcon:
-                Icon(Icons.more_horiz_rounded, color: AppDesign.primary),
+            selectedIcon: Icon(
+              Icons.more_horiz_rounded,
+              color: AppDesign.primary,
+            ),
             label: 'المزيد',
           ),
         ],
@@ -1117,8 +1428,9 @@ Row(
                       labelColor: AppDesign.white,
                       unselectedLabelColor: AppDesign.primary,
                       dividerColor: Colors.transparent,
-                      splashBorderRadius:
-                          BorderRadius.circular(AppDesign.radiusMD),
+                      splashBorderRadius: BorderRadius.circular(
+                        AppDesign.radiusMD,
+                      ),
                       labelStyle: AppDesign.bodyStyle.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -1144,6 +1456,276 @@ Row(
           ),
         ),
         bottomNavigationBar: _buildBottomNavigationBar(),
+      ),
+    );
+  }
+}
+
+/// ═════════ صفحة مسح الباركود لتأكيد التسليم للمستودع ═════════
+/// ترجع true إذا تم تسليم كل صناديق التبرع.
+class DropoffScanPage extends StatefulWidget {
+  final String donationId;
+
+  const DropoffScanPage({super.key, required this.donationId});
+
+  @override
+  State<DropoffScanPage> createState() => _DropoffScanPageState();
+}
+
+class _DropoffScanPageState extends State<DropoffScanPage> {
+  final MobileScannerController _controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates,
+    formats: const [BarcodeFormat.all],
+  );
+
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String _normalize(String s) => s.trim().toLowerCase();
+
+  void _toast(String msg, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, textAlign: TextAlign.center),
+        backgroundColor: error ? Colors.red.shade700 : Colors.green.shade700,
+      ),
+    );
+  }
+
+  Future<void> _showSuccessDialog(String message) {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Icon(Icons.check_circle, color: Colors.green, size: 56),
+          content: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('تم'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onDetect(BarcodeCapture capture) async {
+    if (_busy) return;
+
+    final raw = capture.barcodes
+        .map((b) => b.rawValue)
+        .firstWhere(
+          (v) => v != null && v.trim().isNotEmpty,
+          orElse: () => null,
+        );
+    if (raw == null) return;
+
+    setState(() => _busy = true);
+
+    try {
+      final db = FirebaseFirestore.instance;
+
+      final snap = await db
+          .collection('donation_boxes')
+          .where('donationId', isEqualTo: widget.donationId)
+          .get();
+
+      // ── باركود التبرع نفسه (donationId): تسليم كل الصناديق المتبقية دفعة وحدة ──
+      if (_normalize(raw) == _normalize(widget.donationId)) {
+        final pending = snap.docs
+            .where((d) => d.data()['status'] != 'available')
+            .toList();
+
+        if (pending.isEmpty) {
+          _toast('تم تأكيد تسليم هذا التبرع مسبقاً', error: true);
+          await Future.delayed(const Duration(seconds: 2));
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
+
+        final batch = db.batch();
+
+        for (final box in pending) {
+          batch.update(box.reference, {
+            'status': 'available',
+            'receivedAtWarehouse': FieldValue.serverTimestamp(),
+          });
+
+          final itemsSnap = await db
+              .collection('items')
+              .where('boxId', isEqualTo: box.id)
+              .get();
+
+          for (final it in itemsSnap.docs) {
+            batch.update(it.reference, {'status': 'available'});
+          }
+        }
+
+        batch.update(db.collection('donations').doc(widget.donationId), {
+          'status': 'available',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        await batch.commit();
+
+        if (!mounted) return;
+        await _showSuccessDialog('تم تسليم التبرع بالكامل للمستودع');
+        if (!mounted) return;
+        Navigator.pop(context, true);
+        return;
+      }
+
+      // دوّر على الصندوق اللي كوده يطابق الباركود
+      QueryDocumentSnapshot<Map<String, dynamic>>? match;
+      for (final d in snap.docs) {
+        final code = (d.data()['boxCode'] ?? '').toString();
+        if (_normalize(code) == _normalize(raw)) {
+          match = d;
+          break;
+        }
+      }
+
+      if (match == null) {
+        _toast('هذا الباركود لا يخص هذا التبرع', error: true);
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+
+      if (match.data()['status'] == 'available') {
+        _toast('تم تأكيد تسليم هذا الصندوق مسبقاً', error: true);
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+
+      // 1) الصندوق + قطعه -> متاح (دفعة وحدة)
+      final boxItemsSnap = await db
+          .collection('items')
+          .where('boxId', isEqualTo: match.id)
+          .get();
+
+      final batch = db.batch();
+
+      batch.update(match.reference, {
+        'status': 'available',
+        'receivedAtWarehouse': FieldValue.serverTimestamp(),
+      });
+
+      for (final it in boxItemsSnap.docs) {
+        batch.update(it.reference, {'status': 'available'});
+      }
+
+      await batch.commit();
+
+      // 2) إذا كل الصناديق صارت متاحة، التبرع -> متاح
+      final remaining = snap.docs
+          .where((d) => d.id != match!.id && d.data()['status'] != 'available')
+          .toList();
+
+      final allDone = remaining.isEmpty;
+
+      if (allDone) {
+        await db.collection('donations').doc(widget.donationId).update({
+          'status': 'available',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      if (!mounted) return;
+
+      await _showSuccessDialog(
+        allDone
+            ? 'تم تسليم التبرع بالكامل للمستودع'
+            : 'تم تسليم الصندوق، باقي ${remaining.length}',
+      );
+
+      if (!mounted) return;
+
+      if (allDone) {
+        Navigator.pop(context, true);
+      } else {
+        setState(() => _busy = false);
+      }
+    } catch (e) {
+      _toast('حدث خطأ، حاول مرة ثانية', error: true);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: AppDesign.primary,
+          foregroundColor: Colors.white,
+          title: const Text('تأكيد التسليم للمستودع'),
+          centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.flash_on),
+              onPressed: () => _controller.toggleTorch(),
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            MobileScanner(controller: _controller, onDetect: _onDetect),
+            Center(
+              child: Container(
+                width: 260,
+                height: 260,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 3),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 40,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text(
+                  'وجّه الكاميرا نحو باركود الصندوق أو التبرع لتأكيد التسليم',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+            ),
+            if (_busy)
+              Container(
+                color: Colors.black38,
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+          ],
+        ),
       ),
     );
   }
