@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_design.dart';
 import 'Beneficiary_more_page.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'request_items_helper.dart';
 
 /// ─────────────── إعدادات قاعدة البيانات ───────────────
 const String kRequestsCollection = 'requests';
@@ -11,9 +10,6 @@ const String kBoxesCollection = 'donation_boxes';
 
 /// الحقل الذي يربط الطلب بالمستفيد
 const String kBeneficiaryIdField = 'beneficiaryId';
-
-/// الحقل داخل donation_boxes الذي يربط الصندوق بالطلب (عدّله حسب قاعدتك)
-const String kBoxRequestIdField = 'requestId';
 
 /// حالات الطلبات التي تظهر في تبويب "الطلبات النشطة"
 const List<String> kActiveStatuses = ['requested', 'reserved', 'delivered'];
@@ -252,15 +248,15 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
 
         final docs = [...?snapshot.data?.docs];
 
-        // ترتيب الأحدث أولاً
+        // ترتيب الأحدث أولاً (الطلبات بدون تاريخ تنزل لآخر القائمة)
         docs.sort((a, b) {
-          final da = _toDate(a.data()['createdAt']);
-          final db = _toDate(b.data()['createdAt']);
-
-          if (da != null && db != null) {
-            return db.compareTo(da);
-          }
-          return 0;
+          final da =
+              _toDate(a.data()['createdAt']) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final db =
+              _toDate(b.data()['createdAt']) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return db.compareTo(da);
         });
 
         // لا توجد طلبات
@@ -380,6 +376,34 @@ class OrderCard extends StatelessWidget {
 
   const OrderCard({super.key, required this.requestId, required this.data});
 
+  /// عدد القطع: من itemIds مباشرة، وللطلبات القديمة من كولكشن items
+  Widget _itemsCountRow() {
+    final itemIds = data['itemIds'];
+
+    if (itemIds is List && itemIds.isNotEmpty) {
+      return _InfoRow(
+        icon: Icons.checkroom_outlined,
+        label: 'عدد القطع',
+        value: '${itemIds.length}',
+      );
+    }
+
+    return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      future: FirebaseFirestore.instance
+          .collection('items')
+          .where('requestId', isEqualTo: requestId)
+          .get(),
+      builder: (context, snap) {
+        final count = snap.data?.docs.length;
+        return _InfoRow(
+          icon: Icons.checkroom_outlined,
+          label: 'عدد القطع',
+          value: count == null ? '...' : '$count',
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = (data['status'] ?? '').toString();
@@ -458,6 +482,8 @@ class OrderCard extends StatelessWidget {
                   label: 'تاريخ الطلب',
                   value: _fmtDate(createdAt),
                 ),
+              _InfoRow(icon: Icons.tag, label: 'رقم الطلب', value: requestId),
+              _itemsCountRow(),
               _InfoRow(
                 icon: Icons.local_shipping_outlined,
                 label: 'طريقة التوصيل',
@@ -514,36 +540,6 @@ class OrderCard extends StatelessWidget {
                   value: district,
                 ),
             ],
-          ),
-
-          // ─── الصناديق المرتبطة بالطلب (إن وجدت) ───
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: fetchRequestItems(requestId),
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.only(top: 16),
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                );
-              }
-
-              final items = snap.data ?? [];
-              if (items.isEmpty) return const SizedBox.shrink();
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 16),
-                  RequestItemsList(items: items),
-                ],
-              );
-            },
           ),
         ],
       ),
@@ -642,7 +638,8 @@ class _StatusChip extends StatelessWidget {
 
 /// ═══════════════════════════ صفحة مسح الباركود (تأكيد الاستلام) ═══════════════════════════
 /// الباركود يحمل قيمة requestId الكاملة.
-/// عند التطابق: القطع والصناديق -> delivered، والطلب -> completed.
+/// عند التطابق: القطع -> delivered، والطلب -> completed،
+/// والصندوق/التبرع -> delivered فقط إذا كل قطعه انسلّمت.
 /// ترجع true عند نجاح الاستلام.
 class PickupScanPage extends StatefulWidget {
   final String requestId;
@@ -752,6 +749,14 @@ class _PickupScanPageState extends State<PickupScanPage> {
           .where('requestId', isEqualTo: widget.requestId)
           .get();
 
+      if (itemsSnap.docs.isEmpty) {
+        _toast('لا توجد قطع مرتبطة بالطلب', error: true);
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+
+      final currentIds = itemsSnap.docs.map((d) => d.id).toSet();
       final batch = db.batch();
 
       // 4) القطع -> delivered
@@ -759,16 +764,27 @@ class _PickupScanPageState extends State<PickupScanPage> {
         batch.update(itemDoc.reference, {'status': 'delivered'});
       }
 
-      // 5) الصناديق -> delivered
+      // 5) الصندوق -> delivered فقط إذا كل قطعه انسلّمت
       final boxIds = itemsSnap.docs
           .map((d) => (d.data()['boxId'] ?? '').toString().trim())
           .where((id) => id.isNotEmpty)
           .toSet();
 
       for (final boxId in boxIds) {
-        batch.update(db.collection(kBoxesCollection).doc(boxId), {
-          'status': 'delivered',
-        });
+        final boxItems = await db
+            .collection('items')
+            .where('boxId', isEqualTo: boxId)
+            .get();
+
+        final allDelivered = boxItems.docs.every(
+          (i) => currentIds.contains(i.id) || i.data()['status'] == 'delivered',
+        );
+
+        if (allDelivered) {
+          batch.update(db.collection(kBoxesCollection).doc(boxId), {
+            'status': 'delivered',
+          });
+        }
       }
 
       // 6) الطلب -> completed
@@ -778,7 +794,6 @@ class _PickupScanPageState extends State<PickupScanPage> {
       });
 
       // 7) التبرعات اللي كل قطعها صارت مستلمة
-      final currentIds = itemsSnap.docs.map((d) => d.id).toSet();
       final donationIds = itemsSnap.docs
           .map((d) => (d.data()['donationId'] ?? '').toString().trim())
           .where((id) => id.isNotEmpty)
