@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -15,6 +16,55 @@ class BeneficiaryCartPage extends StatefulWidget {
 }
 
 class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
+  // ---- Beneficiary status (live) ----
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _statusSub;
+  String _beneficiaryStatus = 'pending';
+  bool _statusLoaded = false;
+
+  bool get _isApproved => _beneficiaryStatus == 'approved';
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToBeneficiaryStatus();
+  }
+
+  @override
+  void dispose() {
+    _statusSub?.cancel();
+    super.dispose();
+  }
+
+  void _listenToBeneficiaryStatus() {
+    _statusSub = FirebaseFirestore.instance
+        .collection('beneficiaries')
+        .where('userId', isEqualTo: widget.userId)
+        .limit(1)
+        .snapshots()
+        .listen(
+          (result) {
+            if (!mounted) return;
+            setState(() {
+              _beneficiaryStatus = result.docs.isNotEmpty
+                  ? (result.docs.first.data()['status'] ?? 'pending')
+                        .toString()
+                        .trim()
+                        .toLowerCase()
+                  : 'pending';
+              _statusLoaded = true;
+            });
+          },
+          onError: (e) {
+            debugPrint('BENEFICIARY STATUS ERROR: $e');
+            if (!mounted) return;
+            setState(() {
+              _beneficiaryStatus = 'pending';
+              _statusLoaded = true;
+            });
+          },
+        );
+  }
+
   // ============================================================
   // ACTIONS
   // ============================================================
@@ -52,6 +102,7 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
     List<Map<String, dynamic>> availableItems,
   ) async {
     if (availableItems.isEmpty) return;
+    if (!_isApproved) return;
 
     Navigator.push(
       context,
@@ -184,90 +235,130 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
           foregroundColor: AppDesign.textPrimary,
           elevation: 0,
         ),
-        body: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('cart')
-              .where('beneficiaryId', isEqualTo: widget.userId)
-              .where('status', isEqualTo: 'in_cart')
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+        body: !_statusLoaded
+            ? const Center(child: CircularProgressIndicator())
+            : !_isApproved
+            ? _buildNotApproved()
+            : _buildCartBody(),
+      ),
+    );
+  }
+
+  Widget _buildCartBody() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('cart')
+          .where('beneficiaryId', isEqualTo: widget.userId)
+          .where('status', isEqualTo: 'in_cart')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'حدث خطأ أثناء تحميل السلة',
+              style: AppDesign.bodyStyle.copyWith(
+                color: Colors.red,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          );
+        }
+
+        final cartDocs = snapshot.data?.docs ?? [];
+
+        if (cartDocs.isEmpty) {
+          return _buildEmptyCart();
+        }
+
+        return FutureBuilder<List<Map<String, dynamic>>>(
+          future: _loadCartItems(cartDocs),
+          builder: (context, cartSnapshot) {
+            if (cartSnapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            if (snapshot.hasError) {
-              return Center(
-                child: Text(
-                  'حدث خطأ أثناء تحميل السلة',
-                  style: AppDesign.bodyStyle.copyWith(
-                    color: Colors.red,
-                    fontWeight: FontWeight.w700,
+            final items = cartSnapshot.data ?? [];
+
+            final availableItems = items
+                .where((c) => c['isAvailable'] == true)
+                .toList();
+
+            final unavailableItems = items
+                .where((c) => c['isAvailable'] == false)
+                .toList();
+
+            return Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+                    children: [
+                      if (availableItems.isNotEmpty) ...[
+                        _buildSectionTitle('القطع المتاحة'),
+                        const SizedBox(height: 10),
+                        ...availableItems.map((c) => _buildCartCard(c)),
+                      ],
+                      if (unavailableItems.isNotEmpty) ...[
+                        const SizedBox(height: 18),
+                        _buildSectionTitle('القطع غير المتاحة'),
+                        const SizedBox(height: 10),
+                        ...unavailableItems.map((c) => _buildCartCard(c)),
+                      ],
+                    ],
                   ),
                 ),
-              );
-            }
-
-            final cartDocs = snapshot.data?.docs ?? [];
-
-            if (cartDocs.isEmpty) {
-              return _buildEmptyCart();
-            }
-
-            return FutureBuilder<List<Map<String, dynamic>>>(
-              future: _loadCartItems(cartDocs),
-              builder: (context, cartSnapshot) {
-                if (cartSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final items = cartSnapshot.data ?? [];
-
-                final availableItems = items
-                    .where((c) => c['isAvailable'] == true)
-                    .toList();
-
-                final unavailableItems = items
-                    .where((c) => c['isAvailable'] == false)
-                    .toList();
-
-                return Column(
-                  children: [
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                        children: [
-                          if (availableItems.isNotEmpty) ...[
-                            _buildSectionTitle('القطع المتاحة'),
-                            const SizedBox(height: 10),
-                            ...availableItems.map((c) => _buildCartCard(c)),
-                          ],
-                          if (unavailableItems.isNotEmpty) ...[
-                            const SizedBox(height: 18),
-                            _buildSectionTitle('القطع غير المتاحة'),
-                            const SizedBox(height: 10),
-                            ...unavailableItems.map((c) => _buildCartCard(c)),
-                          ],
-                        ],
-                      ),
-                    ),
-                    _buildBottomButton(
-                      hasUnavailable: unavailableItems.isNotEmpty,
-                      hasAvailable: availableItems.isNotEmpty,
-                      availableItems: availableItems,
-                    ),
-                  ],
-                );
-              },
+                _buildBottomButton(
+                  hasUnavailable: unavailableItems.isNotEmpty,
+                  hasAvailable: availableItems.isNotEmpty,
+                  availableItems: availableItems,
+                ),
+              ],
             );
           },
-        ),
-      ),
+        );
+      },
     );
   }
 
   // ============================================================
   // WIDGETS
   // ============================================================
+
+  Widget _buildNotApproved() {
+    final message = _beneficiaryStatus == 'rejected'
+        ? 'عذرًا، لم تتم الموافقة على طلبك كمستفيد.'
+        : 'طلبك كمستفيد قيد المراجعة، ويمكنك استخدام السلة بعد الموافقة.';
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline_rounded,
+              size: 64,
+              color: AppDesign.primary.withOpacity(0.45),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppDesign.bodyStyle.copyWith(
+                color: AppDesign.primary,
+                fontWeight: FontWeight.w700,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildSectionTitle(String title) {
     return Align(
