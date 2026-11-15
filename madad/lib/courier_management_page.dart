@@ -15,6 +15,70 @@ class CourierManagementPage extends StatefulWidget {
 class _CourierManagementPageState extends State<CourierManagementPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // البحث
+  final TextEditingController _searchController = TextEditingController();
+
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _normalizePhone(String value) {
+    return value.replaceAll(RegExp(r'[\s+\-()]'), '').toLowerCase();
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: TextField(
+        controller: _searchController,
+        textDirection: TextDirection.rtl,
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value.trim().toLowerCase();
+          });
+        },
+        decoration: InputDecoration(
+          hintText: 'ابحث باسم المندوب أو رقم الجوال',
+          hintTextDirection: TextDirection.rtl,
+          prefixIcon: const Icon(Icons.search, color: AppDesign.primary),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                    });
+                  },
+                )
+              : null,
+          filled: true,
+          fillColor: AppDesign.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 17,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide(color: AppDesign.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide(color: AppDesign.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: AppDesign.primary, width: 1.5),
+          ),
+        ),
+      ),
+    );
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _couriersStream() {
     return _firestore.collection('couriers').snapshots();
   }
@@ -236,6 +300,11 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
 
               const SizedBox(height: 18),
 
+              // خانة البحث
+              _buildSearchField(),
+
+              const SizedBox(height: 15),
+
               Expanded(
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: _couriersStream(),
@@ -315,6 +384,22 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                                         userData['phone'] ??
                                         'غير متوفر')
                                     .toString();
+
+                            // البحث بالاسم أو رقم الجوال
+                            final searchName = name.toLowerCase();
+                            final searchPhone = _normalizePhone(phone);
+                            final normalizedQuery = _normalizePhone(
+                              _searchQuery,
+                            );
+
+                            final matchesSearch =
+                                _searchQuery.isEmpty ||
+                                searchName.contains(_searchQuery) ||
+                                searchPhone.contains(normalizedQuery);
+
+                            if (!matchesSearch) {
+                              return const SizedBox.shrink();
+                            }
 
                             // جلب عدد الرحلات المكتملة من Firestore
                             return FutureBuilder<int>(
