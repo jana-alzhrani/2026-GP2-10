@@ -1082,7 +1082,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
                       final String titleText = boxCode.isEmpty
                           ? 'صندوق $boxNumber'
-                          : ' $boxNumber : $boxCode رمز الصندوق ';
+                          : ' $boxCode : $boxNumber رمز الصندوق ';
                       return Container(
                         margin: const EdgeInsets.only(
                           bottom: AppDesign.spaceSM,
