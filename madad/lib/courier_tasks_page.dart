@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_design.dart';
+// Still needed: taskSortTime is used for sorting the completed tab.
+import 'request_items_helper.dart';
 
 class CourierTasksPage extends StatefulWidget {
   final String userId;
@@ -13,93 +15,114 @@ class CourierTasksPage extends StatefulWidget {
 
 class _CourierTasksPageState extends State<CourierTasksPage> {
   int _selectedTab = 0;
+  late Stream<QuerySnapshot> _donationsStreamValue = _donationsStream();
+  late Stream<QuerySnapshot> _requestsStreamValue = _requestsStream();
 
-  Future _acceptDonationTask(String donationId, Map donationData) async {
+  Future<void> _acceptTask({
+    required String collection, // 'donations' or 'requests'
+    required String boxField, // 'donationId' or 'requestId'
+    required String id,
+    required String dialogTitle,
+    required String dialogMessage,
+    required String successMessage,
+    required String requiredStatus,
+  }) async {
     final confirm = await AppDesign.showAppDialog(
       context: context,
-      title: 'قبول الطلب',
-      message: 'هل أنت متأكد من رغبتك في قبول هذا الطلب؟',
+      title: dialogTitle,
+      message: dialogMessage,
       confirmText: 'قبول الطلب',
     );
-
     if (confirm != true) return;
 
     try {
-      final batch = FirebaseFirestore.instance.batch();
-
-      final donationRef = FirebaseFirestore.instance
-          .collection('donations')
-          .doc(donationId);
-      batch.update(donationRef, {
-        'courierId': widget.userId,
-        'courierTaskStatus': 'active',
-        'acceptedAt': FieldValue.serverTimestamp(),
-      });
-
-      final boxesSnapshot = await FirebaseFirestore.instance
+      final db = FirebaseFirestore.instance;
+      final ref = db.collection(collection).doc(id);
+      final boxes = await db
           .collection('donation_boxes')
-          .where('donationId', isEqualTo: donationId)
+          .where(boxField, isEqualTo: id)
           .get();
 
-      for (var boxDoc in boxesSnapshot.docs) {
-        batch.update(boxDoc.reference, {'courierId': widget.userId});
+      final accepted = await db.runTransaction<bool>((tx) async {
+        final snap = await tx.get(ref);
+        if (snap.data()?['status'] != requiredStatus) return false;
+        final current = snap.data()?['courierId'];
+        if (current != null && current.toString().isNotEmpty) return false;
+
+        tx.update(ref, {
+          'courierId': widget.userId,
+          'courierTaskStatus': 'active',
+          'acceptedAt': FieldValue.serverTimestamp(),
+        });
+        for (final b in boxes.docs) {
+          tx.update(b.reference, {'courierId': widget.userId});
+        }
+        return true;
+      });
+
+      if (!mounted) return;
+      if (accepted) {
+        AppDesign.showSuccessSnackBar(context, successMessage);
+      } else {
+        AppDesign.showErrorSnackBar(context, 'تم قبول هذا الطلب من مندوب آخر');
       }
-
-      await batch.commit();
-
-      if (!mounted) return;
-      AppDesign.showSuccessSnackBar(
-        context,
-        'تم قبول الطلب بنجاح وإضافته لمهامك النشطة',
-      );
     } catch (e) {
+      debugPrint('accept task error: $e');
       if (!mounted) return;
-      AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء قبول الطلب: $e');
+      AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء قبول الطلب');
     }
   }
 
-  Future _acceptRequestTask(String requestId, Map requestData) async {
-    final confirm = await AppDesign.showAppDialog(
-      context: context,
-      title: 'قبول طلب المستفيد',
-      message: 'هل أنت متأكد من رغبتك في قبول توصيل هذا الطلب؟',
-      confirmText: 'قبول الطلب',
-    );
+  Future<void> _acceptDonationTask(String id) => _acceptTask(
+    collection: 'donations',
+    boxField: 'donationId',
+    id: id,
+    dialogTitle: 'قبول الطلب',
+    dialogMessage: 'هل أنت متأكد من رغبتك في قبول هذا الطلب؟',
+    successMessage: 'تم قبول الطلب بنجاح وإضافته لمهامك النشطة',
+    requiredStatus: 'published',
+  );
 
-    if (confirm != true) return;
+  Future<void> _acceptRequestTask(String id) => _acceptTask(
+    collection: 'requests',
+    boxField: 'requestId',
+    id: id,
+    dialogTitle: 'قبول طلب المستفيد',
+    dialogMessage: 'هل أنت متأكد من رغبتك في قبول توصيل هذا الطلب؟',
+    successMessage: 'تم قبول طلب المستفيد بنجاح وإضافته لمهامك',
+    requiredStatus: 'requested',
+  );
 
-    try {
-      final batch = FirebaseFirestore.instance.batch();
+  Stream<QuerySnapshot> _donationsStream() {
+    final col = FirebaseFirestore.instance.collection('donations');
 
-      final requestRef = FirebaseFirestore.instance
-          .collection('requests')
-          .doc(requestId);
-      batch.update(requestRef, {
-        'courierId': widget.userId,
-        'courierTaskStatus': 'active',
-        'acceptedAt': FieldValue.serverTimestamp(),
-      });
-
-      final boxesSnapshot = await FirebaseFirestore.instance
-          .collection('donation_boxes')
-          .where('requestId', isEqualTo: requestId)
-          .get();
-
-      for (var boxDoc in boxesSnapshot.docs) {
-        batch.update(boxDoc.reference, {'courierId': widget.userId});
-      }
-
-      await batch.commit();
-
-      if (!mounted) return;
-      AppDesign.showSuccessSnackBar(
-        context,
-        'تم قبول طلب المستفيد بنجاح وإضافته لمهامك',
-      );
-    } catch (e) {
-      if (!mounted) return;
-      AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء قبول الطلب: $e');
+    if (_selectedTab == 0) {
+      return col
+          .where('status', isEqualTo: 'published')
+          .where('deliveryMethod', isEqualTo: 'pickup')
+          .orderBy('createdAt', descending: true)
+          .snapshots();
     }
+    return col
+        .where('courierId', isEqualTo: widget.userId)
+        .where('courierTaskStatus', isEqualTo: 'completed')
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot> _requestsStream() {
+    final col = FirebaseFirestore.instance.collection('requests');
+
+    if (_selectedTab == 0) {
+      return col
+          .where('status', isEqualTo: 'requested')
+          .where('deliveryMethod', isEqualTo: 'delivery')
+          .orderBy('createdAt', descending: true)
+          .snapshots();
+    }
+    return col
+        .where('courierId', isEqualTo: widget.userId)
+        .where('courierTaskStatus', isEqualTo: 'completed')
+        .snapshots();
   }
 
   @override
@@ -144,14 +167,10 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
             ),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('donations')
-                    .snapshots(),
+                stream: _donationsStreamValue,
                 builder: (context, donationsSnap) {
                   return StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('requests')
-                        .snapshots(),
+                    stream: _requestsStreamValue,
                     builder: (context, requestsSnap) {
                       if (donationsSnap.connectionState ==
                               ConnectionState.waiting ||
@@ -183,8 +202,8 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
 
                         bool isAvailable =
                             (_selectedTab == 0) &&
-                            (status == 'published' || status == 'reserved') &&
-                            deliveryMethod != 'self_delivery' &&
+                            status == 'published' &&
+                            deliveryMethod == 'pickup' &&
                             (courierId == null || courierId.toString().isEmpty);
 
                         bool isCompleted =
@@ -197,7 +216,6 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                             'id': doc.id,
                             'type': 'donation',
                             'data': data,
-                            'status': status,
                           });
                         }
                       }
@@ -216,7 +234,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                         bool isAvailable =
                             (_selectedTab == 0) &&
                             deliveryMethod == 'delivery' &&
-                            (status == 'requested' || status.isEmpty) &&
+                            status == 'requested' &&
                             (courierId == null || courierId.toString().isEmpty);
 
                         bool isCompleted =
@@ -229,11 +247,37 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                             'id': doc.id,
                             'type': 'request',
                             'data': data,
-                            'status': status,
                           });
                         }
                       }
+                      DateTime createdAtOf(Map<String, dynamic> d) {
+                        final v = d['createdAt'];
+                        return v is Timestamp
+                            ? v.toDate()
+                            : DateTime.fromMillisecondsSinceEpoch(0);
+                      }
 
+                      combinedTasks.sort((a, b) {
+                        final da = a['data'] as Map<String, dynamic>;
+                        final db = b['data'] as Map<String, dynamic>;
+
+                        if (_selectedTab == 0) {
+                          return createdAtOf(
+                            db,
+                          ).compareTo(createdAtOf(da)); // newest first
+                        }
+                        final ta = taskSortTime(
+                          da,
+                          isDonation: a['type'] == 'donation',
+                          completed: true,
+                        );
+                        final tb = taskSortTime(
+                          db,
+                          isDonation: b['type'] == 'donation',
+                          completed: true,
+                        );
+                        return tb.compareTo(ta);
+                      });
                       if (combinedTasks.isEmpty) {
                         return Center(
                           child: Text(
@@ -252,15 +296,14 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                         itemCount: combinedTasks.length,
                         itemBuilder: (context, index) {
                           final task = combinedTasks[index];
-                          final id = task['id'];
+                          final id = task['id'] as String;
                           final type = task['type'];
                           final data = task['data'] as Map<String, dynamic>;
-                          final status = task['status'];
 
                           if (type == 'donation') {
-                            return _buildDonationTaskCard(id, data, status);
+                            return _buildDonationTaskCard(id, data);
                           } else {
-                            return _buildRequestTaskCard(id, data, status);
+                            return _buildRequestTaskCard(id, data);
                           }
                         },
                       );
@@ -275,12 +318,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
     );
   }
 
-  Widget _buildDonationTaskCard(
-    String docId,
-    Map<String, dynamic> data,
-    String status,
-  ) {
-    // قراءة العنوان من خريطة pickupAddress بشكل صحيح
+  Widget _buildDonationTaskCard(String docId, Map<String, dynamic> data) {
     final pickupAddressMap = data['pickupAddress'];
     final rawCity = pickupAddressMap is Map
         ? (pickupAddressMap['city'] ?? '').toString().trim()
@@ -305,12 +343,8 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
             .clamp(0, 999999);
     final donorId = data['donorId'] ?? '';
 
-    final String pickupLocation = status == 'reserved'
-        ? 'المستودع'
-        : '$city - $district';
-    final String deliveryLocation = status == 'reserved'
-        ? '$city - $district'
-        : 'المستودع';
+    final String pickupLocation = '$city - $district';
+    final String deliveryLocation = 'المستودع';
 
     return FutureBuilder(
       future: donorId.isNotEmpty
@@ -347,24 +381,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: (status == 'completed' || status == 'available')
-                          ? AppDesign.success.withOpacity(0.2)
-                          : AppDesign.warning.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _selectedTab == 1 ? 'مكتمل' : 'متاح',
-                      style: AppDesign.captionStyle.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                  _buildStatusBadge(),
                 ],
               ),
               const SizedBox(height: 12),
@@ -457,7 +474,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => _acceptDonationTask(docId, data),
+                    onPressed: () => _acceptDonationTask(docId),
                     child: const Text('قبول الطلب'),
                   ),
                 ),
@@ -468,12 +485,12 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
     );
   }
 
-  Widget _buildRequestTaskCard(
-    String requestId,
-    Map<String, dynamic> data,
-    String status,
-  ) {
+  Widget _buildRequestTaskCard(String requestId, Map<String, dynamic> data) {
     final beneficiaryId = data['beneficiaryId'] ?? data['beneficiaryID'] ?? '';
+    final List itemIds = data['itemIds'] is List
+        ? data['itemIds'] as List
+        : const [];
+    final int itemsCount = itemIds.length;
     final addressMap = data['deliveryAddress'];
     final warehouseName = addressMap is Map
         ? (addressMap['warehouseName'] ?? 'المستودع').toString()
@@ -481,8 +498,8 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
 
     String deliveryAddressText = 'عنوان المستفيد';
     if (addressMap is Map) {
-      final city = addressMap['city'] ?? '';
-      final district = addressMap['district'] ?? '';
+      final city = (addressMap['city'] ?? '').toString();
+      final district = (addressMap['district'] ?? '').toString();
 
       List<String> addressParts = [];
       if (city.isNotEmpty) addressParts.add(city);
@@ -515,163 +532,144 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
               (userData['phone'] ?? userData['phoneNumber'] ?? '').toString();
         }
 
-        return FutureBuilder<QuerySnapshot>(
-          future: FirebaseFirestore.instance
-              .collection('donation_boxes')
-              .where('requestId', isEqualTo: requestId)
-              .get(),
-          builder: (context, boxesSnap) {
-            final boxesDocs = boxesSnap.data?.docs ?? [];
-            final boxesCount = boxesSnap.data?.docs.length ?? 0;
-
-            List<String> boxCodes = boxesDocs
-                .map(
-                  (b) =>
-                      (b.data() as Map<String, dynamic>)['boxCode']
-                          ?.toString() ??
-                      'صندوق',
-                )
-                .toList();
-            if (boxCodes.isEmpty) {
-              boxCodes = ['لا توجد صناديق مضافة'];
-            }
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: AppDesign.spaceMD),
-              padding: const EdgeInsets.all(AppDesign.cardPadding),
-              decoration: AppDesign.primaryCardDecoration,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        return Container(
+          margin: const EdgeInsets.only(bottom: AppDesign.spaceMD),
+          padding: const EdgeInsets.all(AppDesign.cardPadding),
+          decoration: AppDesign.primaryCardDecoration,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'طلب مستفيد',
-                        style: AppDesign.subtitleStyle.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: status == 'completed'
-                              ? AppDesign.success.withOpacity(0.2)
-                              : AppDesign.warning.withOpacity(0.3),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _selectedTab == 1 ? 'مكتمل' : 'متاح',
-                          style: AppDesign.captionStyle.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on_outlined,
-                        size: 18,
-                        color: AppDesign.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'موقع الاستلام: $warehouseName',
-                          style: AppDesign.bodySecondaryStyle,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.local_shipping_outlined,
-                        size: 18,
-                        color: AppDesign.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'موقع التسليم: $deliveryAddressText',
-                          style: AppDesign.bodySecondaryStyle,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.inventory_2_outlined,
-                        size: 18,
-                        color: AppDesign.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'عدد الصناديق: $boxesCount',
-                          style: AppDesign.bodySecondaryStyle,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.person_outline,
-                        size: 18,
-                        color: AppDesign.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'المستفيد: $beneficiaryName',
-                          style: AppDesign.bodySecondaryStyle,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.phone_outlined,
-                        size: 18,
-                        color: AppDesign.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'رقم الجوال: ${beneficiaryPhone.isNotEmpty ? beneficiaryPhone : 'غير متوفر'}',
-                          style: AppDesign.bodySecondaryStyle,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (_selectedTab == 0)
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => _acceptRequestTask(requestId, data),
-                        child: const Text('قبول الطلب'),
-                      ),
+                  Text(
+                    'طلب مستفيد',
+                    style: AppDesign.subtitleStyle.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
+                  ),
+                  _buildStatusBadge(),
                 ],
               ),
-            );
-          },
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    size: 18,
+                    color: AppDesign.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'موقع الاستلام: $warehouseName',
+                      style: AppDesign.bodySecondaryStyle,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.local_shipping_outlined,
+                    size: 18,
+                    color: AppDesign.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'موقع التسليم: $deliveryAddressText',
+                      style: AppDesign.bodySecondaryStyle,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.inventory_2_outlined,
+                    size: 18,
+                    color: AppDesign.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'عدد القطع: $itemsCount',
+                      style: AppDesign.bodySecondaryStyle,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.person_outline,
+                    size: 18,
+                    color: AppDesign.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'المستفيد: $beneficiaryName',
+                      style: AppDesign.bodySecondaryStyle,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.phone_outlined,
+                    size: 18,
+                    color: AppDesign.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'رقم الجوال: ${beneficiaryPhone.isNotEmpty ? beneficiaryPhone : 'غير متوفر'}',
+                      style: AppDesign.bodySecondaryStyle,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_selectedTab == 0)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => _acceptRequestTask(requestId),
+                    child: const Text('قبول الطلب'),
+                  ),
+                ),
+            ],
+          ),
         );
       },
+    );
+  }
+
+  Widget _buildStatusBadge() {
+    final isCompleted = _selectedTab == 1;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isCompleted
+            ? Colors.grey.shade300
+            : AppDesign.warning.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        isCompleted ? 'مكتمل' : 'متاح',
+        style: AppDesign.captionStyle.copyWith(
+          fontWeight: FontWeight.bold,
+          color: isCompleted ? Colors.grey.shade700 : null,
+        ),
+      ),
     );
   }
 
@@ -679,8 +677,11 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
     final isSelected = _selectedTab == index;
     return GestureDetector(
       onTap: () {
+        if (_selectedTab == index) return;
         setState(() {
           _selectedTab = index;
+          _donationsStreamValue = _donationsStream();
+          _requestsStreamValue = _requestsStream();
         });
       },
       child: Container(
