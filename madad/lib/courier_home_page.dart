@@ -87,6 +87,353 @@ class _CourierHomePageState extends State<CourierHomePage> {
   }
 
   // ============================================================
+  // NOTIFICATIONS
+  // ============================================================
+  Future<void> _showNoNotifications() async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'إغلاق',
+      barrierColor: Colors.black.withOpacity(0.25),
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppDesign.white,
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.10),
+                        blurRadius: 22,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: AppDesign.secondary.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.notifications_none_rounded,
+                          color: AppDesign.primary,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'الإشعارات',
+                        style: AppDesign.h1Style.copyWith(
+                          color: AppDesign.primary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'لا توجد إشعارات جديدة حاليًا',
+                        textAlign: TextAlign.center,
+                        style: AppDesign.bodyStyle.copyWith(
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppDesign.primary,
+                            foregroundColor: AppDesign.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.of(dialogContext).pop();
+                          },
+                          child: const Text(
+                            'حسنًا',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, -0.25),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+    );
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _notificationsStream() {
+    return FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: widget.userId)
+        .snapshots();
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _getUnreadNotifications(
+    QuerySnapshot<Map<String, dynamic>>? snapshot,
+  ) {
+    if (snapshot == null) return [];
+
+    final unread = snapshot.docs.where((doc) {
+      return doc.data()['isRead'] != true;
+    }).toList();
+
+    unread.sort((a, b) {
+      final aTime = a.data()['createdAt'] as Timestamp?;
+      final bTime = b.data()['createdAt'] as Timestamp?;
+
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+
+      return bTime.compareTo(aTime);
+    });
+
+    return unread;
+  }
+
+  Future<void> _markNotificationAsRead(String notificationId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'isRead': true, 'readAt': FieldValue.serverTimestamp()});
+    } catch (e) {
+      debugPrint("NOTIFICATION READ ERROR: $e");
+    }
+  }
+
+  Future<void> _showNotification(
+    QueryDocumentSnapshot<Map<String, dynamic>> notification,
+  ) async {
+    final data = notification.data();
+
+    final type = (data['type'] ?? '').toString();
+
+    final title = (data['title'] ?? 'إشعار جديد').toString();
+
+    final message = (data['message'] ?? '').toString();
+
+    final rejectionReason = (data['rejectionReason'] ?? '').toString().trim();
+
+    final bool isApproved = type == 'beneficiary_approved';
+
+    final bool isRejected = type == 'beneficiary_rejected';
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'إغلاق',
+      barrierColor: Colors.black.withOpacity(0.25),
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppDesign.white,
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.10),
+                        blurRadius: 22,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: isApproved
+                                  ? Colors.green.withOpacity(0.10)
+                                  : isRejected
+                                  ? Colors.red.withOpacity(0.08)
+                                  : AppDesign.secondary.withOpacity(0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              isApproved
+                                  ? Icons.check_rounded
+                                  : isRejected
+                                  ? Icons.close_rounded
+                                  : Icons.notifications_none_rounded,
+                              color: isApproved
+                                  ? Colors.green.shade700
+                                  : isRejected
+                                  ? Colors.red.shade700
+                                  : AppDesign.primary,
+                              size: 26,
+                            ),
+                          ),
+
+                          const SizedBox(width: 12),
+
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'إشعار جديد',
+                                  style: AppDesign.bodyStyle.copyWith(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  title,
+                                  style: AppDesign.h1Style.copyWith(
+                                    color: AppDesign.primary,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      if (message.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isApproved
+                                ? Colors.green.withOpacity(0.06)
+                                : isRejected
+                                ? Colors.red.withOpacity(0.05)
+                                : AppDesign.background,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            message,
+                            style: AppDesign.bodyStyle.copyWith(height: 1.6),
+                          ),
+                        ),
+                      ],
+
+                      if (isRejected && rejectionReason.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppDesign.background,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'سبب الرفض',
+                                style: AppDesign.bodyStyle.copyWith(
+                                  color: AppDesign.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(rejectionReason, style: AppDesign.bodyStyle),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 18),
+
+                      SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppDesign.primary,
+                            foregroundColor: AppDesign.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: () async {
+                            await _markNotificationAsRead(notification.id);
+
+                            if (!dialogContext.mounted) return;
+
+                            Navigator.of(dialogContext).pop();
+                          },
+                          child: const Text(
+                            'حسنًا',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, -0.25),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+    );
+  }
+
+  // ============================================================
   // ACTIONS
   // ============================================================
 
@@ -536,6 +883,82 @@ class _CourierHomePageState extends State<CourierHomePage> {
                         ),
                       ],
                     ),
+                  ),
+
+                  const SizedBox(width: 6),
+
+                  // ==========================================
+                  // NOTIFICATIONS
+                  // ==========================================
+                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _notificationsStream(),
+                    builder: (context, notificationSnapshot) {
+                      final unread = _getUnreadNotifications(
+                        notificationSnapshot.data,
+                      );
+
+                      final unreadCount = unread.length;
+
+                      final latestNotification = unread.isNotEmpty
+                          ? unread.first
+                          : null;
+
+                      return IconButton(
+                        tooltip: 'الإشعارات',
+                        onPressed: () {
+                          if (latestNotification == null) {
+                            _showNoNotifications();
+                          } else {
+                            _showNotification(latestNotification);
+                          }
+                        },
+                        icon: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            const Icon(
+                              Icons.notifications_none_rounded,
+                              color: AppDesign.primary,
+                              size: 28,
+                            ),
+
+                            if (unreadCount > 0)
+                              Positioned(
+                                top: -8,
+                                right: -8,
+                                child: Container(
+                                  constraints: const BoxConstraints(
+                                    minWidth: 20,
+                                    minHeight: 20,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
+                                  ),
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFD84A4A),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: AppDesign.background,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    unreadCount > 9
+                                        ? '9+'
+                                        : unreadCount.toString(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
