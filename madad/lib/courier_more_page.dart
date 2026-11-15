@@ -145,6 +145,16 @@ class _CourierMorePageState extends State<CourierMorePage> {
 
   Future<void> _submitPhoneChangeRequest() async {
     if (_requestBusy) return;
+    final confirm = await AppDesign.showAppDialog(
+      context: context,
+      title: 'تأكيد طلب تغيير الجوال',
+      message:
+          'هل أنت متأكد من رغبتك في إرسال طلب تغيير رقم الجوال؟\nسيتم إرسال الطلب للأدمن للمراجعة.',
+      confirmText: 'إرسال الطلب',
+      cancelText: 'إلغاء',
+    );
+
+    if (confirm != true || !mounted) return;
     setState(() => _requestBusy = true);
     try {
       // لا نستخدم whereIn مع where على أكثر من حقل؛ لتجنب طلب Composite Index.
@@ -1347,49 +1357,51 @@ class _CourierEditSheetState extends State<_CourierEditSheet> {
                   ),
                   const SizedBox(height: 8),
                   if (!_otpSent) ...[
-                    Text(
-                      'الاسم الأول',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppDesign.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _firstCtrl,
-                      enabled: !busy,
-                      maxLength: 30,
-                      textInputAction: TextInputAction.next,
-                      decoration: _decoration(
+                    if (!widget.allowPhoneChange) ...[
+                      Text(
                         'الاسم الأول',
-                        Icons.person_outline,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppDesign.textPrimary,
+                        ),
                       ),
-                      validator: _validateName,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'الاسم الأخير',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppDesign.textPrimary,
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _firstCtrl,
+                        enabled: !busy,
+                        maxLength: 30,
+                        textInputAction: TextInputAction.next,
+                        decoration: _decoration(
+                          'الاسم الأول',
+                          Icons.person_outline,
+                        ),
+                        validator: _validateName,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _lastCtrl,
-                      enabled: !busy,
-                      maxLength: 30,
-                      textInputAction: TextInputAction.next,
-                      decoration: _decoration(
-                        'الاسم الأخير',
-                        Icons.person_outline,
-                      ),
-                      validator: _validateName,
-                    ),
-                    if (widget.allowPhoneChange) ...[
                       const SizedBox(height: 12),
+                      Text(
+                        'الاسم الأخير',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppDesign.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _lastCtrl,
+                        enabled: !busy,
+                        maxLength: 30,
+                        textInputAction: TextInputAction.next,
+                        decoration: _decoration(
+                          'الاسم الأخير',
+                          Icons.person_outline,
+                        ),
+                        validator: _validateName,
+                      ),
+                    ],
+
+                    if (widget.allowPhoneChange) ...[
                       Text(
                         'رقم الجوال',
                         style: TextStyle(
