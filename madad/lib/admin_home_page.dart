@@ -3,14 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'app_design.dart';
+import 'admin_phone_requests_page.dart'; // ✅ جديد (1/4): صفحة طلبات تغيير الجوال
 
 class AdminHomePage extends StatefulWidget {
   final String userId;
 
-  const AdminHomePage({
-    super.key,
-    required this.userId,
-  });
+  const AdminHomePage({super.key, required this.userId});
 
   @override
   State<AdminHomePage> createState() => _AdminHomePageState();
@@ -23,6 +21,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
   int pendingBeneficiariesCount = 0;
   int approvedBeneficiariesCount = 0;
   int couriersCount = 0;
+  int pendingPhoneRequestsCount = 0; // ✅ جديد (2/4)
 
   @override
   void initState() {
@@ -54,8 +53,21 @@ class _AdminHomePageState extends State<AdminHomePage> {
       // -----------------------------------------
       // 3) بيانات المناديب من couriers
       // -----------------------------------------
-      final couriersSnapshot =
-          await FirebaseFirestore.instance.collection('couriers').get();
+      final couriersSnapshot = await FirebaseFirestore.instance
+          .collection('couriers')
+          .get();
+
+      // ✅ جديد (3/4): عدد طلبات تغيير الجوال المعلّقة (لو فشل ما يخرب الباقي)
+      int pendingPhoneRequests = 0;
+      try {
+        final phoneRequestsSnapshot = await FirebaseFirestore.instance
+            .collection('phone_change_requests')
+            .where('status', isEqualTo: 'pending')
+            .get();
+        pendingPhoneRequests = phoneRequestsSnapshot.docs.length;
+      } catch (e) {
+        debugPrint('Error loading phone change requests count: $e');
+      }
 
       if (!mounted) return;
 
@@ -67,11 +79,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
       if (adminDoc.exists) {
         final data = adminDoc.data() ?? {};
 
-        final firstName =
-            (data['firstName'] ?? '').toString().trim();
+        final firstName = (data['firstName'] ?? '').toString().trim();
 
-        final lastName =
-            (data['lastName'] ?? '').toString().trim();
+        final lastName = (data['lastName'] ?? '').toString().trim();
 
         final fullName = '$firstName $lastName'.trim();
 
@@ -89,8 +99,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
       for (final doc in beneficiariesSnapshot.docs) {
         final data = doc.data();
 
-        final status =
-            (data['status'] ?? '').toString().trim().toLowerCase();
+        final status = (data['status'] ?? '').toString().trim().toLowerCase();
 
         if (status == 'pending') {
           pending++;
@@ -103,9 +112,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
       // عدد المناديب
       // -----------------------------------------
       final int couriers = couriersSnapshot.docs
-          .where(
-            (d) => (d.data()['statues'] ?? '').toString() != 'deleted',
-          )
+          .where((d) => (d.data()['statues'] ?? '').toString() != 'deleted')
           .length;
 
       setState(() {
@@ -113,6 +120,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
         pendingBeneficiariesCount = pending;
         approvedBeneficiariesCount = approved;
         couriersCount = couriers;
+        pendingPhoneRequestsCount = pendingPhoneRequests;
         isLoading = false;
       });
     } catch (e) {
@@ -126,36 +134,29 @@ class _AdminHomePageState extends State<AdminHomePage> {
     }
   }
 
-Future<void> _logout() async {
-  final confirmed = await AppDesign.showAppDialog(
-    context: context,
-    title: 'تسجيل الخروج',
-    message: 'هل أنت متأكد من تسجيل الخروج؟',
-    cancelText: 'إلغاء',
-    confirmText: 'تسجيل الخروج',
-  );
-
-  if (!confirmed) return;
-
-  try {
-    await FirebaseAuth.instance.signOut();
-
-    if (!mounted) return;
-
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      '/welcome',
-      (route) => false,
+  Future<void> _logout() async {
+    final confirmed = await AppDesign.showAppDialog(
+      context: context,
+      title: 'تسجيل الخروج',
+      message: 'هل أنت متأكد من تسجيل الخروج؟',
+      cancelText: 'إلغاء',
+      confirmText: 'تسجيل الخروج',
     );
-  } catch (e) {
-    if (!mounted) return;
 
-    AppDesign.showErrorSnackBar(
-      context,
-      'تعذر تسجيل الخروج، حاول مرة أخرى',
-    );
+    if (!confirmed) return;
+
+    try {
+      await FirebaseAuth.instance.signOut();
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(context, '/welcome', (route) => false);
+    } catch (e) {
+      if (!mounted) return;
+
+      AppDesign.showErrorSnackBar(context, 'تعذر تسجيل الخروج، حاول مرة أخرى');
+    }
   }
-}
   // =========================================================
   // Build
   // =========================================================
@@ -172,10 +173,7 @@ Future<void> _logout() async {
             onRefresh: _loadAdminData,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: AppPadding.screen.copyWith(
-                top: 22,
-                bottom: 30,
-              ),
+              padding: AppPadding.screen.copyWith(top: 22, bottom: 30),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -209,7 +207,6 @@ Future<void> _logout() async {
                   // =================================================
                   // المستفيدون
                   // =================================================
-
                   _buildManagementCard(
                     title: 'المستفيدون',
                     subtitle: 'مراجعة طلبات التسجيل وإدارة المستفيدين',
@@ -233,7 +230,6 @@ Future<void> _logout() async {
                   // =================================================
                   // المناديب
                   // =================================================
-
                   _buildManagementCard(
                     title: 'المناديب',
                     subtitle: 'عرض وإدارة حسابات مناديب التوصيل',
@@ -243,6 +239,31 @@ Future<void> _logout() async {
                         context,
                         '/adminCouriers',
                         arguments: widget.userId,
+                      );
+
+                      // تحديث العدد بعد الرجوع
+                      _loadAdminData();
+                    },
+                  ),
+
+                  // =================================================
+                  // ✅ جديد (4/4): خانة طلبات تغيير رقم الجوال
+                  // =================================================
+                  const SizedBox(height: 18),
+                  _buildManagementCard(
+                    title: 'طلبات تغيير الجوال',
+                    subtitle:
+                        'مراجعة طلبات المناديب والمستفيدين لتغيير رقم الجوال',
+                    icon: Icons.phone_android_rounded,
+                    badgeCount: pendingPhoneRequestsCount,
+                    badgeText: 'طلبات جديدة',
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              AdminPhoneRequestsPage(adminId: widget.userId),
+                        ),
                       );
 
                       // تحديث العدد بعد الرجوع
@@ -269,86 +290,83 @@ Future<void> _logout() async {
   // Header
   // =========================================================
 
- Widget _buildHeader() {
-  final String firstLetter =
-      adminName.trim().isNotEmpty ? adminName.trim()[0] : 'م';
+  Widget _buildHeader() {
+    final String firstLetter = adminName.trim().isNotEmpty
+        ? adminName.trim()[0]
+        : 'م';
 
-  return Row(
-    children: [
-      CircleAvatar(
-        radius: 24,
-        backgroundColor: AppDesign.primary,
-        child: Text(
-          firstLetter,
-          style: const TextStyle(
-            color: AppDesign.white,
-            fontWeight: FontWeight.w800,
-            fontSize: 20,
-          ),
-        ),
-      ),
-
-      AppGap.wMD,
-
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'مرحبًا',
-              style: AppDesign.bodyStyle.copyWith(
-                color: AppDesign.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-
-            const SizedBox(height: 2),
-
-            Text(
-              adminName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppDesign.h1Style.copyWith(
-                color: AppDesign.primary,
-                fontSize: 29,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-
-      const SizedBox(width: 12),
-
-      // تسجيل الخروج
-      Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _logout,
-          borderRadius: BorderRadius.circular(AppDesign.radiusMD),
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 24,
+          backgroundColor: AppDesign.primary,
+          child: Text(
+            firstLetter,
+            style: const TextStyle(
               color: AppDesign.white,
-              borderRadius: BorderRadius.circular(
-                AppDesign.radiusMD,
-              ),
-              border: Border.all(
-                color: AppDesign.border,
-              ),
-            ),
-            child: const Icon(
-              Icons.logout_rounded,
-              color: AppDesign.primary,
-              size: 24,
+              fontWeight: FontWeight.w800,
+              fontSize: 20,
             ),
           ),
         ),
-      ),
-    ],
-  );
-}
+
+        AppGap.wMD,
+
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'مرحبًا',
+                style: AppDesign.bodyStyle.copyWith(
+                  color: AppDesign.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+
+              const SizedBox(height: 2),
+
+              Text(
+                adminName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppDesign.h1Style.copyWith(
+                  color: AppDesign.primary,
+                  fontSize: 29,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(width: 12),
+
+        // تسجيل الخروج
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _logout,
+            borderRadius: BorderRadius.circular(AppDesign.radiusMD),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppDesign.white,
+                borderRadius: BorderRadius.circular(AppDesign.radiusMD),
+                border: Border.all(color: AppDesign.border),
+              ),
+              child: const Icon(
+                Icons.logout_rounded,
+                color: AppDesign.primary,
+                size: 24,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   // =========================================================
   // Management Card
@@ -372,12 +390,8 @@ Future<void> _logout() async {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: AppDesign.white,
-            borderRadius: BorderRadius.circular(
-              AppDesign.radiusXL,
-            ),
-            border: Border.all(
-              color: AppDesign.border,
-            ),
+            borderRadius: BorderRadius.circular(AppDesign.radiusXL),
+            border: Border.all(color: AppDesign.border),
             boxShadow: [
               BoxShadow(
                 color: AppDesign.black.withOpacity(0.05),
@@ -395,11 +409,7 @@ Future<void> _logout() async {
                   color: AppDesign.secondary.withOpacity(0.14),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  icon,
-                  color: AppDesign.primary,
-                  size: 29,
-                ),
+                child: Icon(icon, color: AppDesign.primary, size: 29),
               ),
 
               const SizedBox(width: 16),
@@ -437,8 +447,7 @@ Future<void> _logout() async {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color:
-                              AppDesign.softGreen.withOpacity(0.17),
+                          color: AppDesign.softGreen.withOpacity(0.17),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -534,18 +543,11 @@ Future<void> _logout() async {
   }) {
     return Container(
       width: fullWidth ? double.infinity : null,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 15,
-        vertical: 17,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 17),
       decoration: BoxDecoration(
         color: AppDesign.white,
-        borderRadius: BorderRadius.circular(
-          AppDesign.radiusXL,
-        ),
-        border: Border.all(
-          color: AppDesign.border,
-        ),
+        borderRadius: BorderRadius.circular(AppDesign.radiusXL),
+        border: Border.all(color: AppDesign.border),
       ),
       child: Row(
         children: [
@@ -556,11 +558,7 @@ Future<void> _logout() async {
               color: AppDesign.secondary.withOpacity(0.14),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              color: AppDesign.primary,
-              size: 20,
-            ),
+            child: Icon(icon, color: AppDesign.primary, size: 20),
           ),
 
           const SizedBox(width: 12),
