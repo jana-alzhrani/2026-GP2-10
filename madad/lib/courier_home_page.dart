@@ -86,6 +86,10 @@ class _CourierHomePageState extends State<CourierHomePage> {
     }
   }
 
+  // ============================================================
+  // ACTIONS
+  // ============================================================
+
   Future _completeDonationTask(String donationId, String originalStatus) async {
     final confirm = await AppDesign.showAppDialog(
       context: context,
@@ -104,8 +108,18 @@ class _CourierHomePageState extends State<CourierHomePage> {
           .where('donationId', isEqualTo: donationId)
           .get();
 
+      final itemsSnapshot = await FirebaseFirestore.instance
+          .collection('items')
+          .where('donationId', isEqualTo: donationId)
+          .get();
+
       for (var boxDoc in boxesSnapshot.docs) {
         batch.update(boxDoc.reference, {'status': 'available'});
+      }
+
+      // وصلت المستودع: القطع تصير متاحة للمستفيدين
+      for (final itemDoc in itemsSnapshot.docs) {
+        batch.update(itemDoc.reference, {'status': 'available'});
       }
 
       final targetDonationStatus = (originalStatus == 'published')
@@ -132,7 +146,7 @@ class _CourierHomePageState extends State<CourierHomePage> {
     }
   }
 
-  Future _completeRequestTask(String requestId) async {
+  Future<void> _completeRequestTask(String requestId) async {
     final confirm = await AppDesign.showAppDialog(
       context: context,
       title: 'إتمام التوصيل للمستفيد',
@@ -143,60 +157,257 @@ class _CourierHomePageState extends State<CourierHomePage> {
     if (confirm != true) return;
 
     try {
-      final batch = FirebaseFirestore.instance.batch();
+      final firestore = FirebaseFirestore.instance;
 
-      final boxesSnapshot = await FirebaseFirestore.instance
-          .collection('donation_boxes')
+      // 1. Verify that the request exists.
+      final requestRef = firestore.collection('requests').doc(requestId);
+      final requestDoc = await requestRef.get();
+
+      if (!requestDoc.exists) {
+        throw Exception('مستند طلب المستفيد غير موجود');
+      }
+
+      // 2. Get all items directly linked to this request.
+      final itemsSnapshot = await firestore
+          .collection('items')
           .where('requestId', isEqualTo: requestId)
           .get();
 
-      final Set<String> donationIds = {};
+      if (itemsSnapshot.docs.isEmpty) {
+        if (!mounted) return;
 
-      for (var boxDoc in boxesSnapshot.docs) {
-        final boxData = boxDoc.data();
+        AppDesign.showErrorSnackBar(
+          context,
+          'لم يتم العثور على قطع مرتبطة بالطلب',
+        );
+        return;
+      }
 
-        batch.update(boxDoc.reference, {'status': 'delivered'});
+      final donationIds = <String>{};
 
-        final dId = boxData['donationId'] ?? boxData['donationID'];
-        if (dId != null && dId.toString().isNotEmpty) {
-          donationIds.add(dId.toString());
+      for (final itemDoc in itemsSnapshot.docs) {
+        final donationId = (itemDoc.data()['donationId'] ?? '')
+            .toString()
+            .trim();
+
+        if (donationId.isNotEmpty) {
+          donationIds.add(donationId);
         }
       }
 
-      final requestRef = FirebaseFirestore.instance
-          .collection('requests')
-          .doc(requestId);
+      // 3. Check donation documents before updating them.
+      final Map<String, DocumentSnapshot> donationDocs = {};
+
+      for (final donationId in donationIds) {
+        final donationDoc = await firestore
+            .collection('donations')
+            .doc(donationId)
+            .get();
+
+        donationDocs[donationId] = donationDoc;
+
+        if (!donationDoc.exists) {
+          debugPrint('Missing donation document: $donationId');
+        }
+      }
+
+      // 4. Prepare batch updates.
+      final batch = firestore.batch();
+
+      for (final itemDoc in itemsSnapshot.docs) {
+        batch.update(itemDoc.reference, {'status': 'delivered'});
+      }
+
       batch.update(requestRef, {
         'status': 'completed',
         'courierTaskStatus': 'completed',
         'deliveredAt': FieldValue.serverTimestamp(),
       });
 
-      for (String dId in donationIds) {
-        final donationRef = FirebaseFirestore.instance
-            .collection('donations')
-            .doc(dId);
-        batch.update(donationRef, {
-          'status': 'delivered',
-          'courierTaskStatus': 'completed',
-          'deliveredAt': FieldValue.serverTimestamp(),
+      // 5. Update donations only if their documents exist
+      // and all their items have been delivered.
+      for (final donationId in donationIds) {
+        final donationDoc = donationDocs[donationId]!;
+
+        if (!donationDoc.exists) continue;
+
+        final siblings = await firestore
+            .collection('items')
+            .where('donationId', isEqualTo: donationId)
+            .get();
+
+        final allDelivered = siblings.docs.every((item) {
+          final isPartOfCurrentRequest = itemsSnapshot.docs.any(
+            (current) => current.id == item.id,
+          );
+
+          return isPartOfCurrentRequest || item.data()['status'] == 'delivered';
         });
+
+        if (allDelivered) {
+          batch.update(donationDoc.reference, {
+            'status': 'delivered',
+            'courierTaskStatus': 'completed',
+            'deliveredAt': FieldValue.serverTimestamp(),
+          });
+        }
       }
 
-      // تنفيذ العملية دفعة واحدة (Batch Commit)
+      // 6. Commit all changes.
       await batch.commit();
 
       if (!mounted) return;
+
       AppDesign.showSuccessSnackBar(
         context,
-        'تم إتمام توصيل طلب المستفيد وتحديث التبرعات المرتبطة بنجاح',
+        'تم إتمام توصيل طلب المستفيد بنجاح',
       );
+
       _loadCourierData();
     } catch (e) {
+      debugPrint('Complete request error: $e');
+
       if (!mounted) return;
+
       AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء تحديث الحالة: $e');
     }
   }
+
+  /// التخلي عن المهمة: تظهر فوراً لباقي المناديب
+  Future<void> _releaseTask({
+    required String collection, // 'donations' or 'requests'
+    required String id,
+  }) async {
+    final confirm = await AppDesign.showAppDialog(
+      context: context,
+      title: 'التخلي عن المهمة',
+      message:
+          'هل أنت متأكد من رغبتك في التخلي عن هذه المهمة؟\nستظهر فوراً لباقي المناديب.',
+      confirmText: 'تخلي عن المهمة',
+    );
+    if (confirm != true) return;
+
+    try {
+      final db = FirebaseFirestore.instance;
+      final ref = db.collection(collection).doc(id);
+
+      // قبول مهمة التبرع يكتب courierId على الصناديق، فنشيله منها أيضاً
+      final boxes = collection == 'donations'
+          ? await db
+                .collection('donation_boxes')
+                .where('donationId', isEqualTo: id)
+                .get()
+          : null;
+
+      final released = await db.runTransaction<bool>((tx) async {
+        final snap = await tx.get(ref);
+        final data = snap.data();
+
+        // فقط المندوب صاحب المهمة يقدر يتخلى عنها
+        if (data?['courierId']?.toString() != widget.userId) return false;
+        if (data?['courierTaskStatus'] == 'completed') return false;
+
+        tx.update(ref, {
+          'courierId': FieldValue.delete(),
+          'courierTaskStatus': FieldValue.delete(),
+          'acceptedAt': FieldValue.delete(),
+        });
+
+        if (boxes != null) {
+          for (final b in boxes.docs) {
+            tx.update(b.reference, {'courierId': FieldValue.delete()});
+          }
+        }
+        return true;
+      });
+
+      if (!mounted) return;
+
+      if (released) {
+        AppDesign.showSuccessSnackBar(
+          context,
+          'تم التخلي عن المهمة وأصبحت متاحة للمناديب',
+        );
+      } else {
+        AppDesign.showErrorSnackBar(context, 'تعذر التخلي عن هذه المهمة');
+      }
+    } catch (e) {
+      debugPrint('Release task error: $e');
+      if (!mounted) return;
+      AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء التخلي عن المهمة');
+    }
+  }
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+
+  Future<DocumentSnapshot?> _userDoc(String id) async {
+    if (id.isEmpty || id == '-') return null;
+    return FirebaseFirestore.instance.collection('Users').doc(id).get();
+  }
+
+  Widget _whatsAppButton(String phone) {
+    return InkWell(
+      onTap: () => _launchWhatsApp(phone),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.green.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.chat, color: Colors.green, size: 18),
+            SizedBox(width: 6),
+            Text(
+              'واتساب',
+              style: TextStyle(
+                color: Colors.green,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusBadge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppDesign.warning.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _releaseButton(String collection, String id) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () => _releaseTask(collection: collection, id: id),
+        icon: const Icon(Icons.undo_rounded, size: 18),
+        label: const Text('تعذّر إتمام المهمة'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.red.shade700,
+          side: BorderSide(color: Colors.red.shade200),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
@@ -401,12 +612,14 @@ class _CourierHomePageState extends State<CourierHomePage> {
                 stream: FirebaseFirestore.instance
                     .collection('donations')
                     .where('courierId', isEqualTo: widget.userId)
+                    .orderBy('createdAt', descending: true)
                     .snapshots(),
                 builder: (context, donationsSnap) {
                   return StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection('requests')
                         .where('courierId', isEqualTo: widget.userId)
+                        .orderBy('createdAt', descending: true)
                         .snapshots(),
                     builder: (context, requestsSnap) {
                       if (donationsSnap.connectionState ==
@@ -414,6 +627,15 @@ class _CourierHomePageState extends State<CourierHomePage> {
                           requestsSnap.connectionState ==
                               ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
+                      }
+
+                      if (donationsSnap.hasError || requestsSnap.hasError) {
+                        debugPrint(
+                          'Home streams error: ${donationsSnap.error} | ${requestsSnap.error}',
+                        );
+                        return const Center(
+                          child: Text('حدث خطأ في تحميل المهام'),
+                        );
                       }
 
                       final donationDocs = donationsSnap.data?.docs ?? [];
@@ -445,605 +667,18 @@ class _CourierHomePageState extends State<CourierHomePage> {
                         );
                       }
 
+                      // دمج التبرعات والطلبات: الأحدث أولاً
+                      final entries = <_TaskEntry>[
+                        for (final d in activeDonations) _TaskEntry(true, d),
+                        for (final r in activeRequests) _TaskEntry(false, r),
+                      ]..sort((a, b) => b.time.compareTo(a.time));
+
                       return Column(
-                        children: [
-                          // 1. عرض التبرعات النشطة
-                          ...activeDonations.map((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
-
-                            // قراءة العنوان من الخريطة pickupAddress بشكل صحيح حسب هيكل قاعدة البيانات
-                            final pickupAddressMap = data['pickupAddress'];
-                            final rawCity = pickupAddressMap is Map
-                                ? (pickupAddressMap['city'] ?? '')
-                                      .toString()
-                                      .trim()
-                                : (data['city'] ?? '').toString().trim();
-
-                            final rawDistrict = pickupAddressMap is Map
-                                ? (pickupAddressMap['district'] ?? '')
-                                      .toString()
-                                      .trim()
-                                : (data['district'] ?? '').toString().trim();
-
-                            final city = rawCity.isNotEmpty
-                                ? rawCity
-                                : 'لا يوجد';
-                            final district = rawDistrict.isNotEmpty
-                                ? rawDistrict
-                                : 'لا يوجد';
-
-                            final donorId = data['donorId'] ?? '';
-                            final originalStatus =
-                                data['originalStatus'] ?? 'published';
-
-                            final String pickupLocation =
-                                originalStatus == 'reserved'
-                                ? 'المستودع'
-                                : '$city - $district';
-                            final String deliveryLocation =
-                                originalStatus == 'reserved'
-                                ? '$city - $district'
-                                : 'المستودع';
-
-                            return FutureBuilder<DocumentSnapshot>(
-                              future: donorId.isNotEmpty
-                                  ? FirebaseFirestore.instance
-                                        .collection('Users')
-                                        .doc(donorId)
-                                        .get()
-                                  : Future.value(null),
-                              builder: (context, userSnap) {
-                                String name = 'صاحب الطلب';
-                                String phone = '';
-
-                                if (userSnap.hasData &&
-                                    userSnap.data != null &&
-                                    userSnap.data!.exists) {
-                                  final uData =
-                                      userSnap.data!.data()
-                                          as Map<String, dynamic>? ??
-                                      {};
-                                  name =
-                                      '${uData['firstName'] ?? ''} ${uData['lastName'] ?? ''}'
-                                          .trim();
-                                  phone =
-                                      (uData['phone'] ??
-                                              uData['phoneNumber'] ??
-                                              '')
-                                          .toString();
-                                }
-
-                                return FutureBuilder<QuerySnapshot>(
-                                  future: FirebaseFirestore.instance
-                                      .collection('donation_boxes')
-                                      .where('donationId', isEqualTo: doc.id)
-                                      .get(),
-                                  builder: (context, boxesSnap) {
-                                    final boxesDocs =
-                                        boxesSnap.data?.docs ?? [];
-                                    final int boxesCount = boxesDocs.length;
-
-                                    List<String> boxCodes = boxesDocs
-                                        .map(
-                                          (b) =>
-                                              (b.data()
-                                                      as Map<
-                                                        String,
-                                                        dynamic
-                                                      >)['boxCode']
-                                                  ?.toString() ??
-                                              'صندوق',
-                                        )
-                                        .toList();
-                                    if (boxCodes.isEmpty) {
-                                      boxCodes = ['لا توجد صناديق مضافة'];
-                                    }
-
-                                    return Container(
-                                      margin: const EdgeInsets.only(bottom: 16),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration:
-                                          AppDesign.primaryCardDecoration,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'طلب تبرع',
-                                                style: AppDesign.subtitleStyle
-                                                    .copyWith(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                              ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 4,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: AppDesign.warning
-                                                      .withOpacity(0.2),
-                                                  borderRadius:
-                                                      BorderRadius.circular(10),
-                                                ),
-                                                child: const Text(
-                                                  'قيد التوصيل للمستودع',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            'موقع الاستلام: $pickupLocation',
-                                            style: AppDesign.bodySecondaryStyle,
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'موقع التسليم: $deliveryLocation',
-                                            style: AppDesign.bodySecondaryStyle,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'صاحب الطلب: $name',
-                                            style: AppDesign.bodyStyle.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'الجوال: ${phone.isNotEmpty ? phone : 'غير متوفر'}',
-                                                style: AppDesign
-                                                    .bodySecondaryStyle,
-                                              ),
-                                              if (phone.isNotEmpty)
-                                                InkWell(
-                                                  onTap: () =>
-                                                      _launchWhatsApp(phone),
-                                                  borderRadius:
-                                                      BorderRadius.circular(20),
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 10,
-                                                          vertical: 6,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.green
-                                                          .withOpacity(0.15),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            20,
-                                                          ),
-                                                    ),
-                                                    child: const Row(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Icon(
-                                                          Icons.chat,
-                                                          color: Colors.green,
-                                                          size: 18,
-                                                        ),
-                                                        SizedBox(width: 6),
-                                                        Text(
-                                                          'واتساب',
-                                                          style: TextStyle(
-                                                            color: Colors.green,
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Text(
-                                            'عدد الصناديق: $boxesCount',
-                                            style: AppDesign.bodyStyle.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: AppDesign.primary,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.all(10),
-                                            decoration: BoxDecoration(
-                                              color: AppDesign.background,
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              border: Border.all(
-                                                color: AppDesign.border,
-                                              ),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'الصناديق المرتبطة بالطلب:',
-                                                  style: AppDesign
-                                                      .bodySecondaryStyle
-                                                      .copyWith(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 12,
-                                                      ),
-                                                ),
-                                                const SizedBox(height: 6),
-                                                ...boxCodes.map(
-                                                  (code) => Padding(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          vertical: 3,
-                                                        ),
-                                                    child: Row(
-                                                      children: [
-                                                        const Icon(
-                                                          Icons
-                                                              .inventory_2_outlined,
-                                                          size: 16,
-                                                          color:
-                                                              AppDesign.primary,
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 8,
-                                                        ),
-                                                        Text(
-                                                          'رمز الصندوق: $code',
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 14,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w500,
-                                                              ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(height: 14),
-                                          SizedBox(
-                                            width: double.infinity,
-                                            child: ElevatedButton(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor:
-                                                    AppDesign.success,
-                                              ),
-                                              onPressed: () =>
-                                                  _completeDonationTask(
-                                                    doc.id,
-                                                    originalStatus,
-                                                  ),
-                                              child: const Text('تم التسليم'),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            );
-                          }),
-
-                          // 2. عرض طلبات المستفيدين النشطة
-                          ...activeRequests.map((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final beneficiaryId =
-                                data['beneficiaryId'] ??
-                                data['beneficiaryID'] ??
-                                '';
-
-                            final donationId =
-                                data['donationId'] ?? data['donationID'] ?? '';
-                            final addressMap = data['deliveryAddress'];
-                            final warehouseName = addressMap is Map
-                                ? (addressMap['warehouseName'] ?? 'المستودع')
-                                      .toString()
-                                : 'المستودع';
-
-                            String deliveryAddressText = 'عنوان المستفيد';
-                            if (addressMap is Map) {
-                              final city = addressMap['city'] ?? '';
-                              final district = addressMap['district'] ?? '';
-
-                              List<String> addressParts = [];
-                              if (city.isNotEmpty) addressParts.add(city);
-                              if (district.isNotEmpty) {
-                                addressParts.add(district);
-                              }
-
-                              if (addressParts.isNotEmpty) {
-                                deliveryAddressText = addressParts.join(' - ');
-                              }
-                            }
-
-                            return FutureBuilder<DocumentSnapshot>(
-                              future:
-                                  beneficiaryId.isNotEmpty &&
-                                      beneficiaryId != '-'
-                                  ? FirebaseFirestore.instance
-                                        .collection('Users')
-                                        .doc(beneficiaryId)
-                                        .get()
-                                  : Future.value(null),
-                              builder: (context, userSnap) {
-                                String name = 'المستفيد';
-                                String phone = '';
-
-                                if (userSnap.hasData &&
-                                    userSnap.data != null &&
-                                    userSnap.data!.exists) {
-                                  final uData =
-                                      userSnap.data!.data()
-                                          as Map<String, dynamic>? ??
-                                      {};
-                                  name =
-                                      '${uData['firstName'] ?? ''} ${uData['lastName'] ?? ''}'
-                                          .trim();
-                                  phone =
-                                      (uData['phone'] ??
-                                              uData['phoneNumber'] ??
-                                              '')
-                                          .toString();
-                                }
-
-                                return FutureBuilder<QuerySnapshot>(
-                                  future: FirebaseFirestore.instance
-                                      .collection('donation_boxes')
-                                      .where('requestId', isEqualTo: doc.id)
-                                      .get(),
-                                  builder: (context, boxesSnap) {
-                                    final boxesDocs =
-                                        boxesSnap.data?.docs ?? [];
-                                    final int boxesCount = boxesDocs.length;
-
-                                    List<String> boxCodes = boxesDocs
-                                        .map(
-                                          (b) =>
-                                              (b.data()
-                                                      as Map<
-                                                        String,
-                                                        dynamic
-                                                      >)['boxCode']
-                                                  ?.toString() ??
-                                              'صندوق',
-                                        )
-                                        .toList();
-                                    if (boxCodes.isEmpty) {
-                                      boxCodes = ['لا توجد صناديق مضافةة'];
-                                    }
-
-                                    return Container(
-                                      margin: const EdgeInsets.only(bottom: 16),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration:
-                                          AppDesign.primaryCardDecoration,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'طلب مستفيد',
-                                                style: AppDesign.subtitleStyle
-                                                    .copyWith(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                              ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 4,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: AppDesign.warning
-                                                      .withOpacity(0.2),
-                                                  borderRadius:
-                                                      BorderRadius.circular(10),
-                                                ),
-                                                child: const Text(
-                                                  'قيد التوصيل للمستفيد',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            'موقع الاستلام: $warehouseName',
-                                            style: AppDesign.bodySecondaryStyle,
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'موقع التسليم: $deliveryAddressText',
-                                            style: AppDesign.bodySecondaryStyle,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'المستفيد: $name',
-                                            style: AppDesign.bodyStyle.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'الجوال: ${phone.isNotEmpty ? phone : 'غير متوفر'}',
-                                                style: AppDesign
-                                                    .bodySecondaryStyle,
-                                              ),
-                                              if (phone.isNotEmpty)
-                                                InkWell(
-                                                  onTap: () =>
-                                                      _launchWhatsApp(phone),
-                                                  borderRadius:
-                                                      BorderRadius.circular(20),
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 10,
-                                                          vertical: 6,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.green
-                                                          .withOpacity(0.15),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            20,
-                                                          ),
-                                                    ),
-                                                    child: const Row(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Icon(
-                                                          Icons.chat,
-                                                          color: Colors.green,
-                                                          size: 18,
-                                                        ),
-                                                        SizedBox(width: 6),
-                                                        Text(
-                                                          'واتساب',
-                                                          style: TextStyle(
-                                                            color: Colors.green,
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Text(
-                                            'عدد الصناديق: $boxesCount',
-                                            style: AppDesign.bodyStyle.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: AppDesign.primary,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.all(10),
-                                            decoration: BoxDecoration(
-                                              color: AppDesign.background,
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              border: Border.all(
-                                                color: AppDesign.border,
-                                              ),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'الصناديق المرتبطة بالطلب:',
-                                                  style: AppDesign
-                                                      .bodySecondaryStyle
-                                                      .copyWith(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 12,
-                                                      ),
-                                                ),
-                                                const SizedBox(height: 6),
-                                                ...boxCodes.map(
-                                                  (code) => Padding(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          vertical: 3,
-                                                        ),
-                                                    child: Row(
-                                                      children: [
-                                                        const Icon(
-                                                          Icons
-                                                              .inventory_2_outlined,
-                                                          size: 16,
-                                                          color:
-                                                              AppDesign.primary,
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 8,
-                                                        ),
-                                                        Text(
-                                                          'رمز الصندوق: $code',
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 14,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w500,
-                                                              ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(height: 14),
-                                          SizedBox(
-                                            width: double.infinity,
-                                            child: ElevatedButton(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor:
-                                                    AppDesign.success,
-                                              ),
-                                              onPressed: () =>
-                                                  _completeRequestTask(doc.id),
-                                              child: const Text('تم التسليم'),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            );
-                          }),
-                        ],
+                        children: entries.map((entry) {
+                          return entry.isDonation
+                              ? _buildDonationCard(entry.doc)
+                              : _buildRequestCard(entry.doc);
+                        }).toList(),
                       );
                     },
                   );
@@ -1055,4 +690,362 @@ class _CourierHomePageState extends State<CourierHomePage> {
       ),
     );
   }
+
+  // ============================================================
+  // DONATION TASK CARD
+  // ============================================================
+
+  Widget _buildDonationCard(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+
+    // قراءة العنوان من الخريطة pickupAddress حسب هيكل قاعدة البيانات
+    final pickupAddressMap = data['pickupAddress'];
+    final rawCity = pickupAddressMap is Map
+        ? (pickupAddressMap['city'] ?? '').toString().trim()
+        : (data['city'] ?? '').toString().trim();
+
+    final rawDistrict = pickupAddressMap is Map
+        ? (pickupAddressMap['district'] ?? '').toString().trim()
+        : (data['district'] ?? '').toString().trim();
+
+    final city = rawCity.isNotEmpty ? rawCity : 'لا يوجد';
+    final district = rawDistrict.isNotEmpty ? rawDistrict : 'لا يوجد';
+
+    final donorId = (data['donorId'] ?? '').toString();
+    final originalStatus = (data['originalStatus'] ?? 'published').toString();
+
+    final String pickupLocation = originalStatus == 'reserved'
+        ? 'المستودع'
+        : '$city - $district';
+    final String deliveryLocation = originalStatus == 'reserved'
+        ? '$city - $district'
+        : 'المستودع';
+
+    return FutureBuilder<DocumentSnapshot?>(
+      future: _userDoc(donorId),
+      builder: (context, userSnap) {
+        String name = 'صاحب الطلب';
+        String phone = '';
+
+        final userDoc = userSnap.data;
+        if (userDoc != null && userDoc.exists) {
+          final uData = userDoc.data() as Map<String, dynamic>? ?? {};
+          name = '${uData['firstName'] ?? ''} ${uData['lastName'] ?? ''}'
+              .trim();
+          phone = (uData['phone'] ?? uData['phoneNumber'] ?? '').toString();
+        }
+
+        return FutureBuilder<QuerySnapshot>(
+          future: FirebaseFirestore.instance
+              .collection('donation_boxes')
+              .where('donationId', isEqualTo: doc.id)
+              .get(),
+          builder: (context, boxesSnap) {
+            final boxesDocs = boxesSnap.data?.docs ?? [];
+            final int boxesCount = boxesDocs.length;
+
+            List<String> boxCodes = boxesDocs
+                .map(
+                  (b) =>
+                      (b.data() as Map<String, dynamic>)['boxCode']
+                          ?.toString() ??
+                      'صندوق',
+                )
+                .toList();
+            if (boxCodes.isEmpty) {
+              boxCodes = ['لا توجد صناديق مضافة'];
+            }
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: AppDesign.primaryCardDecoration,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'طلب تبرع',
+                        style: AppDesign.subtitleStyle.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      _statusBadge('قيد التوصيل للمستودع'),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'موقع الاستلام: $pickupLocation',
+                    style: AppDesign.bodySecondaryStyle,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'موقع التسليم: $deliveryLocation',
+                    style: AppDesign.bodySecondaryStyle,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'صاحب الطلب: $name',
+                    style: AppDesign.bodyStyle.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'الجوال: ${phone.isNotEmpty ? phone : 'غير متوفر'}',
+                        style: AppDesign.bodySecondaryStyle,
+                      ),
+                      if (phone.isNotEmpty) _whatsAppButton(phone),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'عدد الصناديق: $boxesCount',
+                    style: AppDesign.bodyStyle.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppDesign.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppDesign.background,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppDesign.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'الصناديق المرتبطة بالطلب:',
+                          style: AppDesign.bodySecondaryStyle.copyWith(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ...boxCodes.map(
+                          (code) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.inventory_2_outlined,
+                                  size: 16,
+                                  color: AppDesign.primary,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'رمز الصندوق: $code',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppDesign.success,
+                      ),
+                      onPressed: () =>
+                          _completeDonationTask(doc.id, originalStatus),
+                      child: const Text('تم التسليم'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _releaseButton('donations', doc.id),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // BENEFICIARY REQUEST TASK CARD
+  // ============================================================
+
+  Widget _buildRequestCard(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+
+    final beneficiaryId = (data['beneficiaryId'] ?? data['beneficiaryID'] ?? '')
+        .toString();
+
+    final List itemIds = data['itemIds'] is List
+        ? data['itemIds'] as List
+        : const [];
+    final int itemsCount = itemIds.length;
+
+    final addressMap = data['deliveryAddress'];
+    final warehouseName = addressMap is Map
+        ? (addressMap['warehouseName'] ?? 'المستودع').toString()
+        : 'المستودع';
+
+    String deliveryAddressText = 'عنوان المستفيد';
+    if (addressMap is Map) {
+      final city = (addressMap['city'] ?? '').toString();
+      final district = (addressMap['district'] ?? '').toString();
+
+      final addressParts = <String>[];
+      if (city.isNotEmpty) addressParts.add(city);
+      if (district.isNotEmpty) addressParts.add(district);
+
+      if (addressParts.isNotEmpty) {
+        deliveryAddressText = addressParts.join(' - ');
+      }
+    }
+
+    return FutureBuilder<DocumentSnapshot?>(
+      future: _userDoc(beneficiaryId),
+      builder: (context, userSnap) {
+        String name = 'المستفيد';
+        String phone = '';
+
+        final userDoc = userSnap.data;
+        if (userDoc != null && userDoc.exists) {
+          final uData = userDoc.data() as Map<String, dynamic>? ?? {};
+          name = '${uData['firstName'] ?? ''} ${uData['lastName'] ?? ''}'
+              .trim();
+          phone = (uData['phone'] ?? uData['phoneNumber'] ?? '').toString();
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: AppDesign.primaryCardDecoration,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'طلب مستفيد',
+                    style: AppDesign.subtitleStyle.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  _statusBadge('قيد التوصيل للمستفيد'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'موقع الاستلام: $warehouseName',
+                style: AppDesign.bodySecondaryStyle,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'موقع التسليم: $deliveryAddressText',
+                style: AppDesign.bodySecondaryStyle,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'المستفيد: $name',
+                style: AppDesign.bodyStyle.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'الجوال: ${phone.isNotEmpty ? phone : 'غير متوفر'}',
+                    style: AppDesign.bodySecondaryStyle,
+                  ),
+                  if (phone.isNotEmpty) _whatsAppButton(phone),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'عدد القطع: $itemsCount',
+                style: AppDesign.bodyStyle.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppDesign.primary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppDesign.background,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppDesign.border),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.tag, size: 16, color: AppDesign.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'رقم الطلب: ',
+                      style: AppDesign.bodySecondaryStyle.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                    Expanded(
+                      child: SelectableText(
+                        doc.id,
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppDesign.success,
+                  ),
+                  onPressed: () => _completeRequestTask(doc.id),
+                  child: const Text('تم التسليم'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _releaseButton('requests', doc.id),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TaskEntry {
+  final bool isDonation;
+  final QueryDocumentSnapshot doc;
+
+  _TaskEntry(this.isDonation, this.doc);
+
+  late final DateTime time = _createdAtOf(doc.data() as Map<String, dynamic>);
+}
+
+DateTime _createdAtOf(Map<String, dynamic> data) {
+  final v = data['createdAt'];
+  return v is Timestamp ? v.toDate() : DateTime.fromMillisecondsSinceEpoch(0);
 }
