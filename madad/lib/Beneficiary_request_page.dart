@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_design.dart';
@@ -72,39 +73,49 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
   bool _accessChecked = false;
   bool _isApproved = false;
 
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _statusSub;
+
   @override
   void initState() {
     super.initState();
-    _checkBeneficiaryStatus();
+    _listenToBeneficiaryStatus();
   }
 
-  Future<void> _checkBeneficiaryStatus() async {
-    try {
-      final result = await FirebaseFirestore.instance
-          .collection('beneficiaries')
-          .where('userId', isEqualTo: widget.userId)
-          .limit(1)
-          .get();
+  @override
+  void dispose() {
+    _statusSub?.cancel();
+    super.dispose();
+  }
 
-      final status = result.docs.isNotEmpty
-          ? (result.docs.first.data()['status'] ?? 'pending')
-                .toString()
-                .trim()
-                .toLowerCase()
-          : 'pending';
+  void _listenToBeneficiaryStatus() {
+    _statusSub = FirebaseFirestore.instance
+        .collection('beneficiaries')
+        .where('userId', isEqualTo: widget.userId)
+        .limit(1)
+        .snapshots()
+        .listen(
+          (result) {
+            final status = result.docs.isNotEmpty
+                ? (result.docs.first.data()['status'] ?? 'pending')
+                      .toString()
+                      .trim()
+                      .toLowerCase()
+                : 'pending';
 
-      if (!mounted) return;
-      setState(() {
-        _isApproved = status == 'approved';
-        _accessChecked = true;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isApproved = false;
-        _accessChecked = true;
-      });
-    }
+            if (!mounted) return;
+            setState(() {
+              _isApproved = status == 'approved';
+              _accessChecked = true;
+            });
+          },
+          onError: (e) {
+            if (!mounted) return;
+            setState(() {
+              _isApproved = false;
+              _accessChecked = true;
+            });
+          },
+        );
   }
 
   /// 0 = الطلبات النشطة
@@ -374,14 +385,41 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
 }
 
 /// ═══════════════════════════ كارد الطلب ═══════════════════════════
-class OrderCard extends StatelessWidget {
+class OrderCard extends StatefulWidget {
   final String requestId;
   final Map<String, dynamic> data;
 
   const OrderCard({super.key, required this.requestId, required this.data});
 
   @override
+  State<OrderCard> createState() => _OrderCardState();
+}
+
+class _OrderCardState extends State<OrderCard> {
+  /// نُنشئ الـ Future مرة واحدة بدل إنشائه في كل build
+  late Future<List<Map<String, dynamic>>> _itemsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemsFuture = fetchRequestItems(widget.requestId);
+  }
+
+  @override
+  void didUpdateWidget(covariant OrderCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // نعيد الجلب فقط عند تغيّر الطلب أو حالته (مثلاً بعد مسح الباركود)
+    if (oldWidget.requestId != widget.requestId ||
+        oldWidget.data['status'] != widget.data['status']) {
+      _itemsFuture = fetchRequestItems(widget.requestId);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final requestId = widget.requestId;
+    final data = widget.data;
+
     final status = (data['status'] ?? '').toString();
     final method = (data['deliveryMethod'] ?? '').toString();
     final createdAt = _toDate(data['createdAt']);
@@ -518,7 +556,7 @@ class OrderCard extends StatelessWidget {
 
           // ─── الصناديق المرتبطة بالطلب (إن وجدت) ───
           FutureBuilder<List<Map<String, dynamic>>>(
-            future: fetchRequestItems(requestId),
+            future: _itemsFuture,
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting) {
                 return const Padding(
