@@ -32,17 +32,28 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
   String firstName = "";
   String lastName = "";
 
+  // ---- Cart badge state ----
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _cartSub;
+  int _cartCount = 0;
+  int _cartCountSeq = 0; // ignores stale results that finish out of order
+
+  // ---- Beneficiary status (live) ----
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _statusSub;
+
   @override
   void initState() {
     super.initState();
     loadUserData();
     _listenToItems();
-    loadBeneficiaryStatus();
+    _listenToCart();
+    _listenToBeneficiaryStatus();
   }
 
   @override
   void dispose() {
     _itemsSub?.cancel();
+    _cartSub?.cancel();
+    _statusSub?.cancel();
     super.dispose();
   }
 
@@ -74,24 +85,27 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
 
   Future<void> _openCartIfApproved() async {
     try {
-      final beneficiaryQuery = await FirebaseFirestore.instance
-          .collection('beneficiaries')
-          .where('userId', isEqualTo: widget.userId)
-          .limit(1)
-          .get();
+      String status = beneficiaryStatus;
 
-      final beneficiaryDoc = beneficiaryQuery.docs.isNotEmpty
-          ? beneficiaryQuery.docs.first
-          : null;
+      // نستخدم الحالة المحمّلة مسبقًا، ونستعلم فقط إذا لم يكتمل التحميل بعد
+      if (!_beneficiaryStatusLoaded) {
+        final query = await FirebaseFirestore.instance
+            .collection('beneficiaries')
+            .where('userId', isEqualTo: widget.userId)
+            .limit(1)
+            .get();
+
+        status = query.docs.isNotEmpty
+            ? (query.docs.first.data()['status'] ?? 'pending')
+                  .toString()
+                  .trim()
+                  .toLowerCase()
+            : 'pending';
+      }
 
       if (!mounted) return;
 
-      final status = (beneficiaryDoc?.data()['status'] ?? 'pending')
-          .toString()
-          .trim()
-          .toLowerCase();
-
-      if (beneficiaryDoc == null || status != 'approved') {
+      if (status != 'approved') {
         final message = status == 'rejected'
             ? 'عذرًا، لم تتم الموافقة على طلبك كمستفيد.'
             : 'طلبك كمستفيد قيد المراجعة، ويمكنك استخدام السلة بعد الموافقة.';
@@ -129,32 +143,49 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     }
   }
 
-  Future<void> loadBeneficiaryStatus() async {
-    try {
-      final query = await FirebaseFirestore.instance
-          .collection('beneficiaries')
-          .where('userId', isEqualTo: widget.userId)
-          .limit(1)
-          .get();
+  void _listenToBeneficiaryStatus() {
+    _statusSub = FirebaseFirestore.instance
+        .collection('beneficiaries')
+        .where('userId', isEqualTo: widget.userId)
+        .limit(1)
+        .snapshots()
+        .listen(
+          (query) {
+            if (!mounted) return;
+            setState(() {
+              beneficiaryStatus = query.docs.isNotEmpty
+                  ? (query.docs.first.data()['status'] ?? 'pending')
+                        .toString()
+                        .trim()
+                        .toLowerCase()
+                  : 'pending';
+              _beneficiaryStatusLoaded = true;
+            });
+          },
+          onError: (e) {
+            debugPrint('BENEFICIARY STATUS ERROR: $e');
+            if (!mounted) return;
+            setState(() => _beneficiaryStatusLoaded = true);
+          },
+        );
+  }
 
-      if (!mounted) return;
+  // ============================================================
+  // CART
+  // ============================================================
 
-      setState(() {
-        beneficiaryStatus = query.docs.isNotEmpty
-            ? (query.docs.first.data()['status'] ?? 'pending')
-                  .toString()
-                  .trim()
-                  .toLowerCase()
-            : 'pending';
-        _beneficiaryStatusLoaded = true;
-      });
-    } catch (e) {
-      debugPrint('BENEFICIARY STATUS ERROR: $e');
-      if (!mounted) return;
-      setState(() {
-        _beneficiaryStatusLoaded = true;
-      });
-    }
+  void _listenToCart() {
+    _cartSub = FirebaseFirestore.instance
+        .collection('cart')
+        .where('beneficiaryId', isEqualTo: widget.userId)
+        .where('status', isEqualTo: 'in_cart')
+        .snapshots()
+        .listen((snapshot) async {
+          final seq = ++_cartCountSeq;
+          final count = await _countAvailableCartItems(snapshot.docs);
+          if (!mounted || seq != _cartCountSeq) return;
+          setState(() => _cartCount = count);
+        }, onError: (e) => debugPrint('CART STREAM ERROR: $e'));
   }
 
   // ============================================================
@@ -891,82 +922,51 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
                     // ==========================================
                     // CART
                     // ==========================================
-                    StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('cart')
-                          .where('beneficiaryId', isEqualTo: widget.userId)
-                          .where('status', isEqualTo: 'in_cart')
-                          .snapshots(),
-                      builder: (context, cartSnapshot) {
-                        if (!cartSnapshot.hasData) {
-                          return IconButton(
-                            icon: Icon(
-                              Icons.shopping_cart_outlined,
-                              color: Colors.grey.shade700,
-                              size: 28,
-                            ),
-                            onPressed: _openCartIfApproved,
-                          );
-                        }
+                    IconButton(
+                      onPressed: _openCartIfApproved,
+                      icon: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Icon(
+                            Icons.shopping_cart_outlined,
+                            color: Colors.grey.shade700,
+                            size: 28,
+                          ),
 
-                        final cartDocs = cartSnapshot.data!.docs;
-
-                        return FutureBuilder<int>(
-                          future: _countAvailableCartItems(cartDocs),
-                          builder: (context, countSnapshot) {
-                            final count = countSnapshot.data ?? 0;
-
-                            return IconButton(
-                              onPressed: _openCartIfApproved,
-                              icon: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  Icon(
-                                    Icons.shopping_cart_outlined,
-                                    color: Colors.grey.shade700,
-                                    size: 28,
+                          if (_cartCount > 0)
+                            Positioned(
+                              top: -7,
+                              right: -7,
+                              child: Container(
+                                constraints: const BoxConstraints(
+                                  minWidth: 20,
+                                  minHeight: 20,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 2,
+                                ),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: AppDesign.primary,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: AppDesign.background,
+                                    width: 2,
                                   ),
-
-                                  if (count > 0)
-                                    Positioned(
-                                      top: -7,
-                                      right: -7,
-                                      child: Container(
-                                        constraints: const BoxConstraints(
-                                          minWidth: 20,
-                                          minHeight: 20,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 5,
-                                          vertical: 2,
-                                        ),
-                                        alignment: Alignment.center,
-                                        decoration: BoxDecoration(
-                                          color: AppDesign.primary,
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
-                                          border: Border.all(
-                                            color: AppDesign.background,
-                                            width: 2,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          count > 9 ? '9+' : count.toString(),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
+                                ),
+                                child: Text(
+                                  _cartCount > 9 ? '9+' : _cartCount.toString(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
-                            );
-                          },
-                        );
-                      },
+                            ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
