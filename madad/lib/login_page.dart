@@ -131,7 +131,17 @@ class _LoginPageState extends State<LoginPage> {
                   child: IconButton(
                     icon: Icon(Icons.arrow_back, color: Colors.white),
                     onPressed: () {
-                      Navigator.pushReplacementNamed(context, '/');
+                      final from = ModalRoute.of(context)?.settings.arguments;
+
+                      if (from == 'fromRoleSelection' &&
+                          Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      } else {
+                        Navigator.pushReplacementNamed(
+                          context,
+                          '/',
+                        ); // old behavior
+                      }
                     },
                   ),
                 ),
