@@ -6,6 +6,7 @@ import 'Beneficiary_more_page.dart';
 import 'Beneficiary_view_item_page.dart';
 import 'Beneficiary_request_page.dart';
 import 'Beneficiary_cart_page.dart';
+import 'order_limits_service.dart';
 
 class BeneficiaryHomePage extends StatefulWidget {
   final String userId;
@@ -21,13 +22,12 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
 
   String beneficiaryStatus = 'pending';
   bool _beneficiaryStatusLoaded = false;
-
+  late Stream<OrderLimits> _limitsStream;
   String selectedGender = "الكل";
   String selectedAge = "الكل";
 
   List<Map<String, dynamic>> boxes = [];
   bool isLoading = true;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _itemsSub;
   final Map<String, Map<String, dynamic>> _boxCache = {};
   String firstName = "";
   String lastName = "";
@@ -43,15 +43,17 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
   @override
   void initState() {
     super.initState();
+
+    _limitsStream = OrderLimitsService.watch(widget.userId);
+
     loadUserData();
-    _listenToItems();
+    _loadItems();
     _listenToCart();
     _listenToBeneficiaryStatus();
   }
 
   @override
   void dispose() {
-    _itemsSub?.cancel();
     _cartSub?.cancel();
     _statusSub?.cancel();
     super.dispose();
@@ -302,6 +304,128 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     );
   }
 
+  Widget _buildHomeQuotaCard(OrderLimits limits) {
+    final maxItems = limits.maxItemsPerPeriod;
+    final remaining = limits.itemsRemaining;
+
+    // Percentage of the quota already used.
+    final used = (maxItems - remaining).clamp(0, maxItems);
+    final progress = maxItems == 0 ? 0.0 : used / maxItems;
+
+    final days = limits.daysUntilReset;
+
+    final Color barColor = progress >= 0.8
+        ? Colors.red.shade600
+        : progress >= 0.5
+        ? Colors.orange.shade700
+        : AppDesign.primary;
+
+    final String resetText = days == null
+        ? 'تبدأ الفترة مع أول طلب'
+        : days == 0
+        ? 'تتجدد اليوم'
+        : 'تتجدد بعد $days يومًا';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppDesign.white,
+        borderRadius: BorderRadius.circular(AppDesign.radiusXL),
+        border: Border.all(color: AppDesign.border),
+        boxShadow: [
+          BoxShadow(
+            color: AppDesign.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.volunteer_activism_rounded,
+                  color: AppDesign.primary,
+                  size: 21,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'حصتك من التبرعات',
+                    style: AppDesign.bodyStyle.copyWith(
+                      color: AppDesign.textPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$remaining / $maxItems قطعة',
+                  style: AppDesign.bodyStyle.copyWith(
+                    color: barColor,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: progress.clamp(0.0, 1.0),
+                minHeight: 10,
+                backgroundColor: Colors.grey.shade200,
+                valueColor: AlwaysStoppedAnimation<Color>(barColor),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
+                Icon(
+                  Icons.shopping_bag_outlined,
+                  size: 16,
+                  color: AppDesign.primary,
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    'استخدمت $used من $maxItems قطعة',
+                    style: AppDesign.bodySecondaryStyle.copyWith(
+                      fontSize: 12,
+                      color: AppDesign.textSecondary,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.event_repeat_rounded,
+                  size: 16,
+                  color: AppDesign.primary,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  resetText,
+                  style: AppDesign.bodySecondaryStyle.copyWith(
+                    fontSize: 12,
+                    color: AppDesign.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _notificationsStream() {
     return FirebaseFirestore.instance
         .collection('notifications')
@@ -545,97 +669,96 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
   // DONATION BOXES
   // ============================================================
 
-  void _listenToItems() {
-    _itemsSub = FirebaseFirestore.instance
-        .collection('items')
-        .where('status', isEqualTo: 'available')
-        .snapshots()
-        .listen(
-          (snapshot) async {
-            try {
-              final db = FirebaseFirestore.instance;
+  // ============================================================
+  // DONATION BOXES (loaded once, refreshed by pull-down)
+  // ============================================================
 
-              // نجيب فقط الصناديق اللي ما عندنا لها نسخة محفوظة
-              final newBoxIds = snapshot.docs
-                  .map((d) => (d.data()['boxId'] ?? '').toString())
-                  .where((id) => id.isNotEmpty && !_boxCache.containsKey(id))
-                  .toSet();
+  Future<void> _loadItems() async {
+    try {
+      final db = FirebaseFirestore.instance;
 
-              await Future.wait(
-                newBoxIds.map((id) async {
-                  try {
-                    final snap = await db
-                        .collection('donation_boxes')
-                        .doc(id)
-                        .get();
-                    if (snap.exists && snap.data() != null) {
-                      _boxCache[id] = snap.data()!;
-                    }
-                  } catch (e) {
-                    debugPrint('BOX FETCH ERROR ($id): $e');
-                  }
-                }),
-              );
+      final snapshot = await db
+          .collection('items')
+          .where('status', isEqualTo: 'available')
+          .get();
 
-              final List<Map<String, dynamic>> allItems = [];
+      // نجيب فقط الصناديق اللي ما عندنا لها نسخة محفوظة
+      final newBoxIds = snapshot.docs
+          .map((d) => (d.data()['boxId'] ?? '').toString())
+          .where((id) => id.isNotEmpty && !_boxCache.containsKey(id))
+          .toSet();
 
-              for (final doc in snapshot.docs) {
-                final data = doc.data();
-                final boxId = (data['boxId'] ?? '').toString();
-                final box = _boxCache[boxId];
-
-                final gender = ((box?['gender'] ?? data['gender']) ?? 'الكل')
-                    .toString();
-
-                final rawAgeGroup = box?['ageGroup'] ?? data['ageGroup'];
-                String ageLabel = 'الكل';
-                if (rawAgeGroup is Map) {
-                  ageLabel = (rawAgeGroup['label'] ?? 'الكل').toString();
-                } else if (rawAgeGroup != null) {
-                  ageLabel = rawAgeGroup.toString();
-                }
-
-                String size = (data['size'] ?? '').toString().trim();
-                if (size.isEmpty || size == 'null') {
-                  size = (box?['generalSize'] ?? '').toString().trim();
-                  if (size == 'null') size = '';
-                }
-
-                final imageUrl = (data['imageUrl'] ?? '').toString().trim();
-
-                allItems.add({
-                  'itemId': doc.id,
-                  'boxId': boxId,
-                  'donationId': (data['donationId'] ?? '').toString(),
-                  'gender': gender,
-                  'age': ageLabel,
-                  'type': (data['type'] ?? 'قطعة ملابس').toString(),
-                  'size': size,
-                  'description': (data['description'] ?? '').toString(),
-                  'images': imageUrl.isNotEmpty ? [imageUrl] : <String>[],
-                });
-              }
-
-              if (!mounted) return;
-              setState(() {
-                boxes = allItems;
-                isLoading = false;
-              });
-            } catch (e) {
-              debugPrint('ITEMS ERROR: $e');
-              if (!mounted) return;
-              setState(() => isLoading = false);
+      await Future.wait(
+        newBoxIds.map((id) async {
+          try {
+            final snap = await db.collection('donation_boxes').doc(id).get();
+            if (snap.exists && snap.data() != null) {
+              _boxCache[id] = snap.data()!;
             }
-          },
-          onError: (e) {
-            debugPrint('ITEMS STREAM ERROR: $e');
-            if (!mounted) return;
-            setState(() {
-              boxes = [];
-              isLoading = false;
-            });
-          },
-        );
+          } catch (e) {
+            debugPrint('BOX FETCH ERROR ($id): $e');
+          }
+        }),
+      );
+
+      final List<Map<String, dynamic>> allItems = [];
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final boxId = (data['boxId'] ?? '').toString();
+        final box = _boxCache[boxId];
+
+        final gender = ((box?['gender'] ?? data['gender']) ?? 'الكل')
+            .toString();
+
+        final rawAgeGroup = box?['ageGroup'] ?? data['ageGroup'];
+        String ageLabel = 'الكل';
+        if (rawAgeGroup is Map) {
+          ageLabel = (rawAgeGroup['label'] ?? 'الكل').toString();
+        } else if (rawAgeGroup != null) {
+          ageLabel = rawAgeGroup.toString();
+        }
+
+        String size = (data['size'] ?? '').toString().trim();
+        if (size.isEmpty || size == 'null') {
+          size = (box?['generalSize'] ?? '').toString().trim();
+          if (size == 'null') size = '';
+        }
+
+        final imageUrl = (data['imageUrl'] ?? '').toString().trim();
+
+        allItems.add({
+          'itemId': doc.id,
+          'boxId': boxId,
+          'donationId': (data['donationId'] ?? '').toString(),
+          'gender': gender,
+          'age': ageLabel,
+          'type': (data['type'] ?? 'قطعة ملابس').toString(),
+          'size': size,
+          'description': (data['description'] ?? '').toString(),
+          'images': imageUrl.isNotEmpty ? [imageUrl] : <String>[],
+        });
+      }
+
+      if (!mounted) return;
+      setState(() {
+        boxes = allItems;
+        isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('ITEMS ERROR: $e');
+      if (!mounted) return;
+      setState(() => isLoading = false);
+    }
+  }
+
+  /// Pull-to-refresh: reloads the items (and the box data) from Firestore.
+  Future<void> _onRefresh() async {
+    _boxCache.clear();
+
+    // The quota is already listening to Firestore in real time.
+    // Pull-to-refresh only needs to reload the donation items.
+    await _loadItems();
   }
 
   // ============================================================
@@ -1017,6 +1140,36 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
             const SizedBox(height: 12),
 
             // ==================================================
+            // BENEFICIARY QUOTA PROGRESS
+            // ==================================================
+            if (beneficiaryStatus == 'approved')
+              StreamBuilder<OrderLimits>(
+                stream: _limitsStream,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Center(
+                        child: SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (snapshot.hasError || !snapshot.hasData) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return _buildHomeQuotaCard(snapshot.data!);
+                },
+              ),
+
+            const SizedBox(height: 12),
+
+            // ==================================================
             // FILTER TITLE
             // ==================================================
             Padding(
@@ -1048,36 +1201,48 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
             Expanded(
               child: isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : filtered.isEmpty
-                  ? const Center(child: Text("لا توجد تبرعات"))
-                  : Directionality(
-                      textDirection: TextDirection.rtl,
-                      child: GridView.builder(
-                        padding: const EdgeInsets.all(10),
-                        itemCount: filtered.length,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio: 0.75,
-                            ),
-                        itemBuilder: (context, index) {
-                          final box = filtered[index];
+                  : RefreshIndicator(
+                      color: AppDesign.primary,
+                      onRefresh: _onRefresh,
+                      child: filtered.isEmpty
+                          // Scrollable so pull-down works on the empty state too
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: const [
+                                SizedBox(height: 120),
+                                Center(child: Text("لا توجد تبرعات")),
+                              ],
+                            )
+                          : Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: GridView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.all(10),
+                                itemCount: filtered.length,
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      childAspectRatio: 0.75,
+                                    ),
+                                itemBuilder: (context, index) {
+                                  final box = filtered[index];
 
-                          return Align(
-                            alignment: Alignment.topRight,
-                            child: ClothesBoxCard(
-                              images: box["images"] as List,
-                              gender: box["gender"].toString(),
-                              age: box["age"].toString(),
-                              type: box["type"].toString(),
-                              size: box["size"].toString(),
-                              userId: widget.userId,
-                              itemId: box["itemId"].toString(),
-                              boxId: box["boxId"].toString(),
+                                  return Align(
+                                    alignment: Alignment.topRight,
+                                    child: ClothesBoxCard(
+                                      images: box["images"] as List,
+                                      gender: box["gender"].toString(),
+                                      age: box["age"].toString(),
+                                      type: box["type"].toString(),
+                                      size: box["size"].toString(),
+                                      userId: widget.userId,
+                                      itemId: box["itemId"].toString(),
+                                      boxId: box["boxId"].toString(),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
-                          );
-                        },
-                      ),
                     ),
             ),
           ],
