@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'app_design.dart';
+import 'recommender.dart';
 
 class BeneficiaryViewItemPage extends StatefulWidget {
   final String itemId;
@@ -433,6 +434,11 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
                               ),
                             ],
                           ),
+                        ),
+                        MatchingItemsSection(
+                          itemId: widget.itemId,
+                          item: item,
+                          userId: widget.userId,
                         ),
                       ],
                     ),
