@@ -5,6 +5,15 @@ import 'package:flutter/material.dart';
 import 'app_design.dart';
 import 'beneficiary_delivery_method_page.dart';
 import 'Beneficiary_view_item_page.dart';
+import 'order_limits_service.dart';
+
+/// Cart items + current limits, loaded together.
+class _CartData {
+  final List<Map<String, dynamic>> items;
+  final OrderLimits? limits; // null = couldn't be computed (don't block)
+
+  const _CartData({required this.items, required this.limits});
+}
 
 class BeneficiaryCartPage extends StatefulWidget {
   final String userId;
@@ -22,6 +31,11 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
   bool _statusLoaded = false;
 
   bool get _isApproved => _beneficiaryStatus == 'approved';
+
+  // ---- Cart data cache (used by pull-to-refresh) ----
+  QuerySnapshot? _lastCartSnapshot; // latest cart docs from the stream
+  Future<_CartData>? _dataFuture; // items + limits for those docs
+  _CartData? _lastData; // last loaded data, shown while reloading
 
   @override
   void initState() {
@@ -100,9 +114,20 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
 
   Future<void> _goToDeliveryMethod(
     List<Map<String, dynamic>> availableItems,
+    OrderLimits? limits,
   ) async {
     if (availableItems.isEmpty) return;
     if (!_isApproved) return;
+
+    // Re-check the item quota with fresh data right before continuing.
+    final fresh = await OrderLimitsService.tryFetch(widget.userId) ?? limits;
+
+    if (!mounted) return;
+
+    if (fresh != null && fresh.exceedsItems(availableItems.length)) {
+      AppDesign.showErrorSnackBar(context, fresh.itemsMessage);
+      return;
+    }
 
     Navigator.push(
       context,
@@ -118,6 +143,32 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
   // ============================================================
   // DATA
   // ============================================================
+
+  /// Pull-to-refresh: reloads the cart items and the limits.
+  Future<void> _onRefresh() async {
+    final snap = _lastCartSnapshot;
+    if (snap == null) return;
+
+    final future = _loadCartData(snap.docs);
+    setState(() => _dataFuture = future);
+
+    try {
+      await future;
+    } catch (e) {
+      debugPrint('CART REFRESH ERROR: $e');
+    }
+  }
+
+  Future<_CartData> _loadCartData(List<QueryDocumentSnapshot> cartDocs) async {
+    // Start both at the same time.
+    final itemsFuture = _loadCartItems(cartDocs);
+    final limitsFuture = OrderLimitsService.tryFetch(widget.userId);
+
+    final items = await itemsFuture;
+    final limits = await limitsFuture;
+
+    return _CartData(items: items, limits: limits);
+  }
 
   Future<List<Map<String, dynamic>>> _loadCartItems(
     List<QueryDocumentSnapshot> cartDocs,
@@ -271,17 +322,37 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
         final cartDocs = snapshot.data?.docs ?? [];
 
         if (cartDocs.isEmpty) {
+          _lastCartSnapshot = snapshot.data;
+          _dataFuture = null;
+          _lastData = null;
           return _buildEmptyCart();
         }
 
-        return FutureBuilder<List<Map<String, dynamic>>>(
-          future: _loadCartItems(cartDocs),
+        // Load again only when the cart really changed (or on refresh),
+        // not on every rebuild.
+        if (_dataFuture == null ||
+            !identical(_lastCartSnapshot, snapshot.data)) {
+          _lastCartSnapshot = snapshot.data;
+          _dataFuture = _loadCartData(cartDocs);
+        }
+
+        return FutureBuilder<_CartData>(
+          future: _dataFuture,
           builder: (context, cartSnapshot) {
-            if (cartSnapshot.connectionState == ConnectionState.waiting) {
+            if (cartSnapshot.hasData) {
+              _lastData = cartSnapshot.data;
+            }
+
+            // Show a spinner only the first time; while reloading we keep
+            // showing the previous data so the list doesn't flash.
+            if (cartSnapshot.connectionState == ConnectionState.waiting &&
+                _lastData == null) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final items = cartSnapshot.data ?? [];
+            final data = cartSnapshot.data ?? _lastData;
+            final items = data?.items ?? [];
+            final limits = data?.limits;
 
             final availableItems = items
                 .where((c) => c['isAvailable'] == true)
@@ -293,28 +364,37 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
 
             return Column(
               children: [
+                if (limits != null)
+                  _buildQuotaCard(limits, availableItems.length),
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                    children: [
-                      if (availableItems.isNotEmpty) ...[
-                        _buildSectionTitle('القطع المتاحة'),
-                        const SizedBox(height: 10),
-                        ...availableItems.map((c) => _buildCartCard(c)),
+                  child: RefreshIndicator(
+                    color: AppDesign.primary,
+                    onRefresh: _onRefresh,
+                    child: ListView(
+                      // Always scrollable so pull-down works even with 1 item.
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+                      children: [
+                        if (availableItems.isNotEmpty) ...[
+                          _buildSectionTitle('القطع المتاحة'),
+                          const SizedBox(height: 10),
+                          ...availableItems.map((c) => _buildCartCard(c)),
+                        ],
+                        if (unavailableItems.isNotEmpty) ...[
+                          const SizedBox(height: 18),
+                          _buildSectionTitle('القطع غير المتاحة'),
+                          const SizedBox(height: 10),
+                          ...unavailableItems.map((c) => _buildCartCard(c)),
+                        ],
                       ],
-                      if (unavailableItems.isNotEmpty) ...[
-                        const SizedBox(height: 18),
-                        _buildSectionTitle('القطع غير المتاحة'),
-                        const SizedBox(height: 10),
-                        ...unavailableItems.map((c) => _buildCartCard(c)),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
                 _buildBottomButton(
                   hasUnavailable: unavailableItems.isNotEmpty,
                   hasAvailable: availableItems.isNotEmpty,
                   availableItems: availableItems,
+                  limits: limits,
                 ),
               ],
             );
@@ -594,28 +674,166 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
     );
   }
 
+  // ------------------------------------------------------------
+  // Quota card: progress bar of the items left + days until reset
+  // ------------------------------------------------------------
+  Widget _buildQuotaCard(OrderLimits limits, int cartCount) {
+    final maxItems = limits.maxItemsPerPeriod;
+    final remaining = limits.itemsRemaining;
+    final ratio = maxItems == 0 ? 0.0 : remaining / maxItems;
+    final afterOrder = remaining - cartCount;
+    final days = limits.daysUntilReset;
+
+    final Color barColor = ratio <= 0.2
+        ? Colors.red.shade600
+        : ratio <= 0.5
+        ? Colors.orange.shade700
+        : AppDesign.primary;
+
+    final String resetText = days == null
+        ? 'تبدأ الفترة مع أول طلب'
+        : days == 0
+        ? 'تتجدد اليوم'
+        : 'تتجدد بعد $days يومًا';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppDesign.white,
+        borderRadius: BorderRadius.circular(AppDesign.radiusXL),
+        border: Border.all(color: AppDesign.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'حصتك خلال $kLimitPeriodDays يومًا',
+                  style: AppDesign.bodyStyle.copyWith(
+                    color: AppDesign.textPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                'المتبقي: $remaining من $maxItems قطعة',
+                style: AppDesign.bodyStyle.copyWith(
+                  color: barColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: ratio.clamp(0.0, 1.0),
+              minHeight: 10,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 16,
+            runSpacing: 6,
+            children: [
+              _quotaChip(Icons.shopping_cart_outlined, 'في السلة: $cartCount'),
+              _quotaChip(Icons.event_repeat_rounded, resetText),
+            ],
+          ),
+          if (cartCount > 0 && afterOrder >= 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              'بعد هذا الطلب ستتبقى لك $afterOrder قطعة',
+              style: AppDesign.bodySecondaryStyle.copyWith(
+                color: AppDesign.textSecondary,
+                fontSize: 12.5,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _quotaChip(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: AppDesign.primary),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: AppDesign.bodySecondaryStyle.copyWith(
+            color: AppDesign.textSecondary,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBottomButton({
     required bool hasUnavailable,
     required bool hasAvailable,
     required List<Map<String, dynamic>> availableItems,
+    required OrderLimits? limits,
   }) {
+    final overItems =
+        limits != null && limits.exceedsItems(availableItems.length);
+
+    // Warning under the card (only when the item quota is exceeded).
+    String? warning;
+    if (overItems) {
+      warning = limits.itemsRemaining == 0
+          ? limits.itemsMessage
+          : '${limits.itemsMessage}، يرجى إزالة بعض القطع للمتابعة';
+    }
+
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        child: SizedBox(
-          width: double.infinity,
-          height: AppDesign.buttonHeightMD,
-          child: ElevatedButton(
-            onPressed: hasUnavailable || !hasAvailable
-                ? null
-                : () async {
-                    await _goToDeliveryMethod(availableItems);
-                  },
-            child: Text(
-              hasUnavailable ? 'أزل القطع غير المتاحة للمتابعة' : 'طلب التبرع',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (warning != null) ...[
+              Text(
+                warning,
+                textAlign: TextAlign.center,
+                style: AppDesign.bodyStyle.copyWith(
+                  color: Colors.red.shade700,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              height: AppDesign.buttonHeightMD,
+              child: ElevatedButton(
+                onPressed: hasUnavailable || !hasAvailable || overItems
+                    ? null
+                    : () async {
+                        await _goToDeliveryMethod(availableItems, limits);
+                      },
+                child: Text(
+                  hasUnavailable
+                      ? 'أزل القطع غير المتاحة للمتابعة'
+                      : 'طلب التبرع',
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
