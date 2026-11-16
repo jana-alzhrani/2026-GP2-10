@@ -243,3 +243,19 @@ class RequestItemsList extends StatelessWidget {
     );
   }
 }
+
+/// Sort key for tasks: newest first.
+DateTime taskSortTime(
+  Map<String, dynamic> data, {
+  required bool isDonation,
+  bool completed = false,
+}) {
+  dynamic raw;
+  if (completed) raw = data['deliveredAt'];
+  raw ??= isDonation
+      ? (data['updatedAt'] ?? data['createdAt'])
+      : data['createdAt'];
+
+  if (raw is Timestamp) return raw.toDate();
+  return DateTime.fromMillisecondsSinceEpoch(0);
+}
