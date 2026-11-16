@@ -34,7 +34,7 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
   final TextEditingController _itemCountController = TextEditingController();
 
-  final String _apiKey = 'AIzaSyABvSn90NMs7pcPAv_Lr0vDU-1_9GYgZGU';
+  final String _apiKey = '';
 
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
