@@ -844,6 +844,7 @@ class _BeneficiaryDeliveryMethodPageState
           'status': 'requested',
           'deliveryMethod': selectedMethod,
           'itemIds': itemIds,
+          'itemsCount': itemIds.length,
           'boxIds': boxIds.toList(),
           'createdAt': FieldValue.serverTimestamp(),
           'deliveredAt': null,
