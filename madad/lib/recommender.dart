@@ -1,11 +1,3 @@
-// ============================================================
-// نظام التوصية (V4 type-aware + FashionCLIP)
-//
-// 1) السيرفر يحسب "بصمة" كل قطعة (128 رقم) مرة وحدة، ونحفظها في items.embedding
-// 2) هنا داخل التطبيق نرتب القطع لحظياً بنفس معادلة الموديل:
-//    score = cosine(e_a × m, e_b × m)   (m = قناع زوج الأنواع من v4_masks.json)
-// الرقم للترتيب بس، ما نعرضه كنسبة.
-// ============================================================
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -19,10 +11,9 @@ import 'app_design.dart';
 import 'Beneficiary_view_item_page.dart';
 
 class Recommender {
-   static const String serverUrl = '';
+  static const String serverUrl = 'https://madad-recommender-1066829548492.europe-west1.run.app';
   static const String appSecret = '';
 
-  // أنواع التطبيق (عربي) -> أنواع الموديل (إنجليزي). الثوب والشماغ والعباية تحت (proxyType).
   static const Map<String, String> arToModelType = {
     'قميص': 'Shirt',
     'تيشيرت': 'T-Shirt',
@@ -61,15 +52,12 @@ class Recommender {
     _goWith = g.map((k, v) => MapEntry(k, List<String>.from(v)));
   }
 
-  // القطع السعودية مو موجودة في بيانات تدريب الموديل (Polyvore)،
-  // فنعاملها كأقرب نوع: الثوب والعباية قطعة كاملة مثل الفستان، والشماغ غطاء راس مثل القبعة.
   static const Map<String, String> proxyType = {
     'ثوب': 'Dress',
     'عباية': 'Dress',
     'شماغ': 'Hat',
   };
 
-  // وش يطلع معها (بالترتيب): إكسسوارات وأحذية تكمّل اللبسة
   static const Map<String, List<String>> saudiGoWith = {
     'ثوب': ['شماغ', 'حذاء', 'ساعة', 'نظارة'],
     'عباية': ['حقيبة', 'حذاء', 'شال', 'نظارة', 'ساعة'],
@@ -86,7 +74,6 @@ class Recommender {
     return v.map((x) => (x as num).toDouble()).toList();
   }
 
-  /// نفس معادلة الموديل بالضبط
   static double score(List<double> ea, List<double> eb, String ta, String tb) {
     final mask = _masks![_typeIndex![ta]!][_typeIndex![tb]!];
     double dot = 0, na = 0, nb = 0;
@@ -100,7 +87,6 @@ class Recommender {
     return dot / (math.sqrt(na) * math.sqrt(nb));
   }
 
-  /// يطلب البصمة من السيرفر ويحفظها في القطعة. ما يرمي خطأ (التوصية ميزة إضافية).
   static Future<List<double>?> computeAndSaveEmbedding(
     DocumentReference<Map<String, dynamic>> itemRef,
     String imageUrl,
@@ -124,7 +110,7 @@ class Recommender {
         try {
           await itemRef.update({'embedding': e});
         } catch (err) {
-          debugPrint('EMBED SAVE ERROR: $err'); // نرجّع البصمة حتى لو ما انحفظت
+          debugPrint('EMBED SAVE ERROR: $err');
         }
       }
       return e;
@@ -134,7 +120,6 @@ class Recommender {
     }
   }
 
-  /// لكل قطعة جديدة في الصندوق (بعد الحفظ). ما ننتظره عشان ما يتأخر المتبرع.
   static void embedInBackground(List<Map<String, dynamic>> items) {
     for (final it in items) {
       unawaited(computeAndSaveEmbedding(
@@ -145,7 +130,6 @@ class Recommender {
     }
   }
 
-  /// أفضل [perType] قطع من كل نوع يناسب القطعة المعروضة
   static Future<List<Map<String, dynamic>>> rank({
     required Map<String, dynamic> query,
     required List<Map<String, dynamic>> candidates,
@@ -168,7 +152,7 @@ class Recommender {
       byType.putIfAbsent(tc, () => []).add({...c, '_score': score(eq, ec, tq, tc)});
     }
     final out = <Map<String, dynamic>>[];
-    for (final t in wanted) {            // الأنواع الأكثر ظهوراً مع القطعة أولاً
+    for (final t in wanted) {
       final list = byType[t];
       if (list == null) continue;
       list.sort((a, b) => (b['_score'] as double).compareTo(a['_score'] as double));
@@ -178,7 +162,6 @@ class Recommender {
     return out.take(maxTotal).toList();
   }
 
-  // الثوب والعباية والشماغ: نفس معادلة الموديل بالنوع الأقرب، والأنواع من قائمتنا
   static List<Map<String, dynamic>> _rankSaudi(
     Map<String, dynamic> query,
     List<Map<String, dynamic>> candidates,
@@ -209,12 +192,9 @@ class Recommender {
   }
 }
 
-// ============================================================
-// قسم "قطع تناسبها" في صفحة تفاصيل القطعة (لحظي)
-// ============================================================
 class MatchingItemsSection extends StatefulWidget {
   final String itemId;
-  final Map<String, dynamic> item; // فيها type, gender, ageGroup, imageUrl, description
+  final Map<String, dynamic> item;
   final String userId;
 
   const MatchingItemsSection({
@@ -231,7 +211,7 @@ class MatchingItemsSection extends StatefulWidget {
 class _MatchingItemsSectionState extends State<MatchingItemsSection> {
   final _db = FirebaseFirestore.instance;
   final Map<String, Map<String, dynamic>> _boxCache = {};
-  final Set<String> _requested = {}; // قطع طلبنا بصمتها (عشان ما نكرر)
+  final Set<String> _requested = {};
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
   List<Map<String, dynamic>> _results = [];
   List<double>? _queryEmbedding;
@@ -239,17 +219,14 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
   static String _ageLabel(dynamic v) =>
       v is Map ? (v['label'] ?? '').toString() : (v ?? '').toString();
 
-  // ترتيب الفئات العمرية والمقاسات (نفس القوائم في صفحة إضافة التبرع)
   static const _ageOrder = [
     'رضّع (0-2)', 'أطفال صغار (3-5)', 'أطفال (6-9)', 'أطفال (10-15)', 'بالغون'
   ];
   static const _sizeOrder = ['XS - S', 'S - M', 'M - L', 'L - XL'];
-  // الملابس اللي لها مقاس. الأحذية والحقائب والإكسسوارات ما يهمها مقاس الملابس
   static const _sized = {
     'قميص', 'تيشيرت', 'كنزة', 'بنطلون', 'تنورة', 'فستان', 'جاكيت', 'معطف', 'ثوب', 'عباية'
   };
 
-  // العمر قريب: نفس الفئة أو اللي جنبها مباشرة، والأطفال ما يختلطون مع البالغين
   static bool _ageClose(String a, String b) {
     if (a.isEmpty || b.isEmpty) return true;
     final i = _ageOrder.indexOf(a), j = _ageOrder.indexOf(b);
@@ -259,7 +236,6 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
     return (i - j).abs() <= 1;
   }
 
-  // المقاس قريب (للبالغين): نفس المقاس أو اللي جنبه، مثل S - M مع M - L
   static bool _sizeClose(String a, String b) {
     if (a.isEmpty || b.isEmpty) return true;
     final i = _sizeOrder.indexOf(a), j = _sizeOrder.indexOf(b);
@@ -274,7 +250,6 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
   }
 
   Future<void> _start() async {
-    // بصمة القطعة المعروضة (لو قطعة قديمة ما عندها، نحسبها الحين)
     _queryEmbedding = Recommender._vec(widget.item['embedding']);
     _queryEmbedding ??= await Recommender.computeAndSaveEmbedding(
       _db.collection('items').doc(widget.itemId),
@@ -283,7 +258,6 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
     );
     if (_queryEmbedding == null || !mounted) return;
 
-    // snapshots: المحجوزة تختفي والجديدة تطلع فوراً
     _sub = _db
         .collection('items')
         .where('status', isEqualTo: 'available')
@@ -319,15 +293,19 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
       final box = _boxCache[(data['boxId'] ?? '').toString()];
       final g = (box?['gender'] ?? data['gender'] ?? '').toString();
       final a = _ageLabel(box?['ageGroup'] ?? data['ageGroup']);
-      if (gender.isNotEmpty && g.isNotEmpty && g != gender) continue; // نفس الجنس
-      if (!_ageClose(age, a)) continue;                                // عمر قريب
+      if (gender.isNotEmpty && g.isNotEmpty && g != gender) continue;
+      final bothSized =
+          _sized.contains(widget.item['type']) && _sized.contains(data['type']);
+      if (!_ageClose(age, a)) continue;
+      if (_sized.contains(data['type']) &&
+          age != 'بالغون' && age.isNotEmpty && a.isNotEmpty && a != age) {
+        continue;
+      }
       if (age == 'بالغون' &&
-          _sized.contains(widget.item['type']) &&
-          _sized.contains(data['type']) &&
-          !_sizeClose(mySize, (box?['generalSize'] ?? '').toString())) continue; // مقاس قريب (للملابس بس)
+          bothSized &&
+          !_sizeClose(mySize, (box?['generalSize'] ?? '').toString())) continue;
 
       if (data['embedding'] == null && _requested.add(d.id)) {
-        // قطعة قديمة أو فشل حسابها وقت الرفع: نحسبها بالخلفية، وتطلع بالتحديث الجاي
         unawaited(Recommender.computeAndSaveEmbedding(
           d.reference,
           (data['imageUrl'] ?? '').toString(),
@@ -353,7 +331,7 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
 
   @override
   Widget build(BuildContext context) {
-    if (_results.isEmpty) return const SizedBox.shrink(); // نوع مو مدعوم أو ما فيه قطع
+    if (_results.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
