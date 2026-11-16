@@ -137,7 +137,7 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      'طلبك كمستفيد قيد المراجعة، وستتمكن من متابعة طلباتك بعد الموافقة.',
+                      'عذراً ، ستتمكن فقط من متابعة طلباتك بعد الموافقة على طلبك كمستفيد.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppDesign.primary,
