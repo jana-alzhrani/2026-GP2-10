@@ -818,9 +818,9 @@ class _CourierHomePageState extends State<CourierHomePage> {
                 label: 'المهام',
               ),
               NavigationDestination(
-                icon: Icon(Icons.person_outline, color: AppDesign.primary),
-                selectedIcon: Icon(Icons.person, color: AppDesign.primary),
-                label: 'حسابي',
+                icon: Icon(Icons.more_horiz, color: AppDesign.primary),
+                selectedIcon: Icon(Icons.more_horiz, color: AppDesign.primary),
+                label: 'المزيد',
               ),
             ],
           ),
@@ -1427,7 +1427,7 @@ class _CourierHomePageState extends State<CourierHomePage> {
                     ),
                     Expanded(
                       child: SelectableText(
-                        doc.id,
+                        '#${doc.id.length > 6 ? doc.id.substring(0, 6) : doc.id}',
                         textDirection: TextDirection.ltr,
                         style: const TextStyle(
                           fontSize: 13,
