@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'app_design.dart';
+import 'recommender.dart';
 
 class EditDonationPage extends StatefulWidget {
   final String donationId;
@@ -707,14 +708,14 @@ class _EditDonationPageState extends State<EditDonationPage> {
                   "text": """
 Check the image.
 
-Type notes (group similar items, do not split): Shirt = button or collared top (shirt, blouse, polo); T-Shirt = t-shirt, tank top or simple jersey top; Sweater = warm top (sweater, hoodie, cardigan, sweatshirt); Pants = any bottoms (pants, jeans, shorts, leggings); Dress = dress, jalabiya, jumpsuit, romper or baby onesie; Jacket = light jacket, blazer or vest; Coat = heavy winter coat; Thobe = Saudi/Gulf men's long robe (also bisht); Shemagh = men's Gulf head cloth (shemagh/ghutra); Abaya = women's long cloak (a tarha/hijab/headscarf also counts as Abaya); Sleepwear = use the closest type (T-Shirt or Pants); Shawl = shawl or neck/winter scarf (not a hijab); Glasses = sunglasses or eyeglasses; Watch = wrist watch; Belt = belt; Gloves = gloves or mittens; Shoe = any footwear (shoes, sandals, slippers, boots).
+Type notes (group similar items, do not split): Shirt = button or collared top (shirt, blouse, polo); T-Shirt = t-shirt, tank top or simple jersey top; Sweater = warm top (sweater, hoodie, cardigan, sweatshirt); Pants = any bottoms (pants, jeans, shorts, leggings); Dress = dress, jalabiya, jumpsuit, romper or baby onesie; Jacket = light jacket, blazer or vest; Coat = heavy winter coat; Thobe = Saudi/Gulf men's long robe (also bisht); Shemagh = men's Gulf head cloth (shemagh/ghutra); Abaya = women's long cloak (a tarha/hijab/headscarf also counts as Abaya); Sleepwear = use the closest type (T-Shirt or Pants); Shawl = shawl or neck/winter scarf (not a hijab); Glasses = sunglasses or eyeglasses; Watch = wrist watch; Belt = belt; Gloves = gloves or mittens; Bag = any bag (handbag, backpack, school bag, clutch, tote, crossbody, wallet); Skirt = skirt; Hat = hat or cap; Shoe = any footwear (shoes, sandals, slippers, boots).
 
 If it is NOT a valid item from the type list above, answer only:
 {"valid": false}
 
 Reject if:
-- the photo itself is completely dark/black (a black abaya or black clothing is fine)
-- blurry
+- the photo is so dark that the item cannot be recognized (black or dark-colored items on a dark background are fine)
+- so blurry that the item cannot be recognized
 - not one of the types in the list
 
 If it is valid, answer only with JSON (no extra text) in this format:
@@ -945,6 +946,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
       // 2) كل شي في batch واحد: حذف القديم + كتابة الجديد
       final batch = firestore.batch();
+      final List<Map<String, dynamic>> toEmbed = []; // للتوصية بعد الحفظ
 
       final donationRef = firestore
           .collection('donations')
@@ -1002,6 +1004,11 @@ If it is valid, answer only with JSON (no extra text) in this format:
         for (int i = 0; i < items.length; i++) {
           final e = items[i];
           final itemRef = firestore.collection('items').doc();
+          toEmbed.add({
+            'ref': itemRef,
+            'imageUrl': uploaded[boxNumber]![i]['url'],
+            'description': (e['description'] ?? '').toString(),
+          });
 
           batch.set(itemRef, {
             'boxId': boxRef.id, // ربط بالصندوق
@@ -1021,6 +1028,9 @@ If it is valid, answer only with JSON (no extra text) in this format:
       }
 
       await batch.commit();
+
+      // بصمة كل قطعة للتوصية (القطع تنكتب من جديد، فنحسبها لها كلها)
+      Recommender.embedInBackground(toEmbed);
 
       // 3) نحدّث الحالة المحلية عشان أي حفظ ثاني يعيد استخدام الصور
       for (final entry in boxes.entries) {
