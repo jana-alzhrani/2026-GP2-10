@@ -40,12 +40,16 @@ class _RoleSelectionPageState extends State {
                   ),
                   Positioned(
                     top: 40,
-                    left: 10,
+                    right: 10,
                     child: IconButton(
-                      icon: Icon(Icons.arrow_forward, color: Colors.white),
                       onPressed: () {
                         Navigator.pop(context);
                       },
+                      icon: const Icon(
+                        Icons.arrow_forward,
+                        textDirection: TextDirection.ltr,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ],
