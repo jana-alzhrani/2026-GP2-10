@@ -252,6 +252,18 @@ class _OtpPageState extends State<OtpPage> {
 
         final role = (userData['role'] ?? '').toString().trim().toLowerCase();
 
+        // الحساب موقوف (محذوف من الأدمن)
+        if ((userData['status'] ?? '').toString().trim().toLowerCase() ==
+            'deleted') {
+          await FirebaseAuth.instance.signOut();
+
+          if (mounted) {
+            AppDesign.showErrorSnackBar(context, 'تم إيقاف هذا الحساب');
+          }
+
+          return;
+        }
+
         if (!mounted) return;
 
         if (role == 'courier') {
@@ -475,9 +487,9 @@ class _OtpPageState extends State<OtpPage> {
                 ),
                 Positioned(
                   top: 40,
-                  left: 10,
+                  right: 10,
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    icon: const Icon(Icons.arrow_forward, color: Colors.white),
                     onPressed: () {
                       codeController.clear();
                       FocusScope.of(context).unfocus();
