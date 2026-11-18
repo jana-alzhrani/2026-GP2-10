@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -39,23 +37,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
   bool _isDraftStatus(String status) {
     return status.toLowerCase() == 'draft';
-  }
-
-  String _formatStatus(String status) {
-    switch (status.trim().toLowerCase()) {
-      case 'draft':
-        return 'مسودة';
-      case 'published':
-        return 'مؤكد';
-      case 'available':
-        return 'متاح';
-      case 'reserved':
-        return 'محجوز';
-      case 'delivered':
-        return 'تم التوصيل';
-      default:
-        return status;
-    }
   }
 
   String _formatDeliveryMethod(String method) {
@@ -163,34 +144,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                 color: fg,
                 fontWeight: FontWeight.w700,
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _chip(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDesign.spaceMD,
-        vertical: AppDesign.spaceSM,
-      ),
-      decoration: BoxDecoration(
-        color: AppDesign.surfaceAlt,
-        borderRadius: BorderRadius.circular(AppDesign.radiusLG),
-        border: Border.all(color: AppDesign.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: AppDesign.iconSM, color: AppDesign.primary),
-          const SizedBox(width: AppDesign.spaceSM),
-          Text(
-            text,
-            style: AppDesign.captionStyle.copyWith(
-              color: AppDesign.textPrimary,
-              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -500,15 +453,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                     pw.Image(logoImage, width: 70),
                     pw.SizedBox(height: 8),
                     pw.Container(height: 1, color: PdfColor.fromHex("#0A4D5C")),
-                    pw.SizedBox(height: 8),
-
-                    // QR فعلي يحتوي نص الـ boxCode (هذا اللي يتم مسحه)
-                    pw.BarcodeWidget(
-                      barcode: pw.Barcode.qrCode(),
-                      data: boxCode,
-                      width: 80,
-                      height: 80,
-                    ),
                     pw.SizedBox(height: 8),
 
                     pw.Text(
@@ -825,7 +769,9 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     final String gender = (data['gender'] ?? '-').toString();
     final String ageGroup = (data['ageGroup'] ?? '-').toString();
     // للعنوان فقط: نشيل الأقواس من الفئة العمرية عشان ما تتداخل
-    final String ageGroupTitle = ageGroup.replaceAll(RegExp(r'[()]'), '').trim();
+    final String ageGroupTitle = ageGroup
+        .replaceAll(RegExp(r'[()]'), '')
+        .trim();
     final int numberOfItems = (data['numberOfItems'] ?? 0) as int;
     final String generalSize = (data['generalSize'] ?? '').toString();
     final String status = (data['status'] ?? '-').toString();
