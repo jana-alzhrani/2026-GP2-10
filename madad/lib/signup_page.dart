@@ -180,9 +180,9 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
                 Positioned(
                   top: 40,
-                  left: 10,
+                  right: 10,
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    icon: const Icon(Icons.arrow_forward, color: Colors.white),
                     onPressed: () {
                       Navigator.pop(context);
                     },
