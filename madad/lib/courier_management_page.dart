@@ -462,13 +462,13 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
               ),
             ),
             Positioned(
-              left: 0,
+              right: 0,
               child: IconButton(
                 onPressed: () {
                   Navigator.pop(context);
                 },
                 icon: const Icon(
-                  Icons.arrow_back,
+                  Icons.arrow_forward,
                   textDirection: TextDirection.ltr,
                   color: AppDesign.primary,
                 ),
