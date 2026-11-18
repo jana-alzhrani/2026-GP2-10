@@ -374,10 +374,10 @@ class _BeneficiaryRegistrationPageState
                     ),
                     Positioned(
                       top: 40,
-                      left: 10,
+                      right: 10,
                       child: IconButton(
                         icon: const Icon(
-                          Icons.arrow_back,
+                          Icons.arrow_forward,
                           color: Colors.white,
                           textDirection: TextDirection.ltr,
                         ),
