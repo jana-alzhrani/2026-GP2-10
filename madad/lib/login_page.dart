@@ -127,9 +127,9 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 Positioned(
                   top: 40,
-                  left: 10,
+                  right: 10,
                   child: IconButton(
-                    icon: Icon(Icons.arrow_back, color: Colors.white),
+                    icon: Icon(Icons.arrow_forward, color: Colors.white),
                     onPressed: () {
                       final from = ModalRoute.of(context)?.settings.arguments;
 
