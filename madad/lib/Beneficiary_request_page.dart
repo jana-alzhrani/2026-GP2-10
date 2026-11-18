@@ -433,7 +433,7 @@ class _OrderCardState extends State<OrderCard> {
 
     final shortId = requestId.length < 6
         ? requestId
-        : requestId.substring(0, 6);
+        : requestId.substring(0, 8);
 
     // زر المسح يظهر فقط للاستلام من المستودع وقبل اكتمال الطلب
     final canScan = method == 'pickup' && status != kCompletedStatus;
