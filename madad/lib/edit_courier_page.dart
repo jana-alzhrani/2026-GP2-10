@@ -361,9 +361,14 @@ class _EditCourierPageState extends State<EditCourierPage> {
             children: [
               const Center(child: Text('تعديل بيانات السائق')),
               Align(
-                alignment: Alignment.centerLeft,
+                alignment: Alignment.centerRight,
                 child: IconButton(
-                  icon: const Icon(Icons.west, color: Colors.black, size: 28),
+                  icon: const Icon(
+                    Icons.arrow_forward,
+                    textDirection: TextDirection.ltr,
+                    color: Colors.black,
+                    size: 28,
+                  ),
                   onPressed: () {
                     Navigator.pop(context);
                   },
