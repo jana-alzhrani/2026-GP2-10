@@ -94,15 +94,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
   final Map<String, TextEditingController> _descControllers = {};
 
-  TextEditingController _descCtrl(int box, int idx) {
-    return _descControllers.putIfAbsent(
-      '${box}_$idx',
-      () => TextEditingController(
-        text: (boxes[box]?[idx]['description'] ?? '').toString(),
-      ),
-    );
-  }
-
   // نتخلص من الـ controller بعد انتهاء الفريم (عشان ما نعمل dispose
   // وهو لسا مربوط بـ TextField)
   void _disposeDescController(String key) {
@@ -662,7 +653,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     }
   }
 
-
   // نوع الصورة من أول بايتات الملف (WEBP / PNG / JPEG) عشان Gemini يقرأها صح
   String _detectMime(Uint8List bytes, String? fallback) {
     if (bytes.length > 12 &&
@@ -671,7 +661,10 @@ class _EditDonationPageState extends State<EditDonationPage> {
       return 'image/webp';
     }
     if (bytes.length > 4 &&
-        bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
       return 'image/png';
     }
     if (bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8) {
@@ -754,9 +747,9 @@ If it is valid, answer only with JSON (no extra text) in this format:
         // صالحة = Gemini قال valid + النوع من أنواعنا (أي شيء ثاني يُرفض)
         final bool isValid = geminiJson != null
             ? geminiJson['valid'] == true &&
-                typeMap.containsKey(
-                  (geminiJson['type'] ?? '').toString().trim().toLowerCase(),
-                )
+                  typeMap.containsKey(
+                    (geminiJson['type'] ?? '').toString().trim().toLowerCase(),
+                  )
             : result.trim().toLowerCase().startsWith("yes");
 
         setState(() {
@@ -767,7 +760,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
             if (geminiJson != null) {
               detectedType =
-                  typeMap[(geminiJson['type'] ?? '').toString().trim().toLowerCase()];
+                  typeMap[(geminiJson['type'] ?? '')
+                      .toString()
+                      .trim()
+                      .toLowerCase()];
             } else if (cleaned.contains("-")) {
               final typeEng = cleaned.split("-")[1].trim();
               detectedType = typeMap[typeEng];
@@ -1069,28 +1065,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
         context,
       ).showSnackBar(SnackBar(content: Text('فشل حفظ التغييرات: $e')));
     }
-  }
-
-  void _goToViewDonation() {
-    if (!mounted) return;
-
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      '/viewDonation',
-      (route) => false,
-      arguments: FirebaseAuth.instance.currentUser?.uid ?? '',
-    );
-  }
-
-  Future<void> _finishAndGoBack() async {
-    AppDesign.showSuccessSnackBar(
-      context,
-      'تم تعديل التبرع بنجاح ',
-      duration: Duration(seconds: 1),
-    );
-
-    await Future.delayed(const Duration(milliseconds: 800));
-    _goToViewDonation();
   }
 
   Future<void> _showBackDialog() async {
