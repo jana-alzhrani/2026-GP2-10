@@ -1427,8 +1427,8 @@ class _CourierHomePageState extends State<CourierHomePage> {
                     ),
                     Expanded(
                       child: SelectableText(
-                        '#${doc.id.length > 6 ? doc.id.substring(0, 6) : doc.id}',
-                        textDirection: TextDirection.ltr,
+                        '#${doc.id.length > 6 ? doc.id.substring(0, 8) : doc.id}',
+                        textDirection: TextDirection.rtl,
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
