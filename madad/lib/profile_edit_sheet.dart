@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_design.dart';
-import 'phone_change_guard.dart';
 
 /// Shared edit sheet for donor / beneficiary / courier.
 /// Name + phone editing, phone change verified by OTP (Firebase Auth).
@@ -711,5 +710,93 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
         ),
       ),
     );
+  }
+}
+
+// ======================================================
+// PhoneChangeGuard: blocks phone change while active work exists
+// ======================================================
+
+/// Blocks phone-number changes while the user has active work tied to a courier:
+/// - donor        -> an active donation assigned to a courier
+/// - beneficiary  -> an active request assigned to a courier
+/// - courier      -> an active task (donation or request) assigned to them
+class PhoneChangeGuard {
+  PhoneChangeGuard._();
+
+  // Any of these values (in courierTaskStatus or status) means the work is over.
+  // Adjust to match the exact status strings used in your app.
+  static const Set<String> _finished = {
+    'completed',
+    'delivered',
+    'done',
+    'cancelled',
+    'canceled',
+    'rejected',
+  };
+
+  static bool _isActive(Map<String, dynamic> data) {
+    final courierId = (data['courierId'] ?? '').toString().trim();
+    if (courierId.isEmpty) return false; // not assigned to a courier
+
+    final task = (data['courierTaskStatus'] ?? '').toString().trim().toLowerCase();
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+
+    return !_finished.contains(task) && !_finished.contains(status);
+  }
+
+  static Future<bool> _anyActive(Query<Map<String, dynamic>> query) async {
+    final snap = await query.get();
+    return snap.docs.any((d) => _isActive(d.data()));
+  }
+
+  /// Returns an Arabic message if the number can NOT be changed, or null if allowed.
+  /// Throws if the check itself fails (so we never allow a change unchecked).
+  static Future<String?> blockReason({
+    required String role, // 'donor' | 'beneficiary' | 'courier'
+    required String userId,
+  }) async {
+    final db = FirebaseFirestore.instance;
+
+    try {
+      switch (role) {
+        case 'donor':
+          final active = await _anyActive(
+            db.collection('donations').where('donorId', isEqualTo: userId),
+          );
+          return active
+              ? 'لا يمكنك تغيير رقم الجوال لوجود تبرع نشط مسند إلى مندوب. '
+                  'يمكنك التغيير بعد اكتمال التبرع أو إلغاء إسناده للمندوب.'
+              : null;
+
+        case 'beneficiary':
+          final active = await _anyActive(
+            db.collection('requests').where('beneficiaryId', isEqualTo: userId),
+          );
+          return active
+              ? 'لا يمكنك تغيير رقم الجوال لوجود طلب نشط مسند إلى مندوب. '
+                  'يمكنك التغيير بعد اكتمال الطلب أو إلغاء إسناده للمندوب.'
+              : null;
+
+        case 'courier':
+          final results = await Future.wait([
+            _anyActive(
+              db.collection('donations').where('courierId', isEqualTo: userId),
+            ),
+            _anyActive(
+              db.collection('requests').where('courierId', isEqualTo: userId),
+            ),
+          ]);
+          return results.any((r) => r)
+              ? 'لا يمكنك تغيير رقم الجوال لوجود مهمة نشطة مسندة إليك. '
+                  'يمكنك التغيير بعد اكتمال المهمة أو إلغاء إسنادها.'
+              : null;
+
+        default:
+          return null;
+      }
+    } catch (_) {
+      throw Exception('تعذّر التحقق من وجود مهام نشطة. حاول مرة أخرى');
+    }
   }
 }
