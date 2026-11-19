@@ -16,12 +16,14 @@ class BeneficiaryRegistrationPage extends StatefulWidget {
 
 class _BeneficiaryRegistrationPageState
     extends State<BeneficiaryRegistrationPage> {
-  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _socialSecurityController =
       TextEditingController();
 
-  String? _nameError;
+  String? _firstNameError;
+  String? _lastNameError;
   String? _phoneError;
   String? _socialSecurityError;
   String? _fileError;
@@ -31,28 +33,23 @@ class _BeneficiaryRegistrationPageState
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _phoneController.dispose();
     _socialSecurityController.dispose();
     super.dispose();
   }
 
   // التحقق من الاسم الكامل
-  String? _validateName(String value) {
+  String? _validatePersonName(String value) {
     final name = value.trim();
 
     if (name.isEmpty) {
       return 'الرجاء تعبئة الحقل';
     }
 
-    final parts = name.split(RegExp(r'\s+'));
-
-    if (parts.length < 2) {
-      return 'يرجى إدخال الاسم الكامل';
-    }
-
-    if (name.length > 100) {
-      return 'يجب ألا يتجاوز الاسم 100 حرف';
+    if (name.length < 2 || name.length > 50) {
+      return 'يجب أن يكون الاسم بين 2 و50 حرفًا';
     }
 
     return null;
@@ -128,7 +125,10 @@ class _BeneficiaryRegistrationPageState
 
   // التحقق من جميع الحقول عند الضغط على زر التسجيل
   bool _validateAllFields() {
-    final nameError = _validateName(_nameController.text);
+    final firstNameError = _validatePersonName(_firstNameController.text);
+
+    final lastNameError = _validatePersonName(_lastNameController.text);
+
     final phoneError = _validatePhone(_phoneController.text);
     final socialSecurityError = _validateSocialSecurity(
       _socialSecurityController.text,
@@ -139,13 +139,15 @@ class _BeneficiaryRegistrationPageState
         : null;
 
     setState(() {
-      _nameError = nameError;
+      _firstNameError = firstNameError;
+      _lastNameError = lastNameError;
       _phoneError = phoneError;
       _socialSecurityError = socialSecurityError;
       _fileError = fileError;
     });
 
-    return nameError == null &&
+    return firstNameError == null &&
+        lastNameError == null &&
         phoneError == null &&
         socialSecurityError == null &&
         fileError == null;
@@ -252,17 +254,10 @@ class _BeneficiaryRegistrationPageState
         return;
       }
 
-      final fullName = _nameController.text.trim();
+      final firstName = _firstNameController.text.trim();
+      final lastName = _lastNameController.text.trim();
+
       final normalizedPhone = '+966${phone.substring(1)}';
-
-      // تقسيم الاسم إلى اسم أول وبقية الاسم
-      final nameParts = fullName
-          .split(RegExp(r'\s+'))
-          .where((part) => part.isNotEmpty)
-          .toList();
-
-      final firstName = nameParts.first;
-      final lastName = nameParts.skip(1).join(' ');
 
       // إرسال رمز التحقق إلى الجوال
       await FirebaseAuth.instance.verifyPhoneNumber(
@@ -399,16 +394,30 @@ class _BeneficiaryRegistrationPageState
 
                 const SizedBox(height: 12),
 
-                // الاسم الكامل
+                // الاسم الأول
                 _buildField(
-                  label: 'الاسم الكامل',
+                  label: 'الاسم الأول',
                   icon: Icons.person,
-                  controller: _nameController,
-                  errorText: _nameError,
+                  controller: _firstNameController,
+                  errorText: _firstNameError,
                   keyboardType: TextInputType.name,
                   onChanged: (value) {
-                    if (_nameError != null) {
-                      setState(() => _nameError = null);
+                    if (_firstNameError != null) {
+                      setState(() => _firstNameError = null);
+                    }
+                  },
+                ),
+
+                // اسم العائلة
+                _buildField(
+                  label: 'الاسم الاخير',
+                  icon: Icons.person,
+                  controller: _lastNameController,
+                  errorText: _lastNameError,
+                  keyboardType: TextInputType.name,
+                  onChanged: (value) {
+                    if (_lastNameError != null) {
+                      setState(() => _lastNameError = null);
                     }
                   },
                 ),
