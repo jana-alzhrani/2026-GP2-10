@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'app_design.dart';
-import 'admin_phone_requests_page.dart'; // ✅ جديد (1/4): صفحة طلبات تغيير الجوال
 
 class AdminHomePage extends StatefulWidget {
   final String userId;
@@ -21,7 +20,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
   int pendingBeneficiariesCount = 0;
   int approvedBeneficiariesCount = 0;
   int couriersCount = 0;
-  int pendingPhoneRequestsCount = 0; // ✅ جديد (2/4)
 
   @override
   void initState() {
@@ -56,18 +54,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
       final couriersSnapshot = await FirebaseFirestore.instance
           .collection('couriers')
           .get();
-
-      // ✅ جديد (3/4): عدد طلبات تغيير الجوال المعلّقة (لو فشل ما يخرب الباقي)
-      int pendingPhoneRequests = 0;
-      try {
-        final phoneRequestsSnapshot = await FirebaseFirestore.instance
-            .collection('phone_change_requests')
-            .where('status', isEqualTo: 'pending')
-            .get();
-        pendingPhoneRequests = phoneRequestsSnapshot.docs.length;
-      } catch (e) {
-        debugPrint('Error loading phone change requests count: $e');
-      }
 
       if (!mounted) return;
 
@@ -120,7 +106,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
         pendingBeneficiariesCount = pending;
         approvedBeneficiariesCount = approved;
         couriersCount = couriers;
-        pendingPhoneRequestsCount = pendingPhoneRequests;
         isLoading = false;
       });
     } catch (e) {
@@ -239,31 +224,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
                         context,
                         '/adminCouriers',
                         arguments: widget.userId,
-                      );
-
-                      // تحديث العدد بعد الرجوع
-                      _loadAdminData();
-                    },
-                  ),
-
-                  // =================================================
-                  // ✅ جديد (4/4): خانة طلبات تغيير رقم الجوال
-                  // =================================================
-                  const SizedBox(height: 18),
-                  _buildManagementCard(
-                    title: 'طلبات تغيير الجوال',
-                    subtitle:
-                        'مراجعة طلبات المناديب والمستفيدين لتغيير رقم الجوال',
-                    icon: Icons.phone_android_rounded,
-                    badgeCount: pendingPhoneRequestsCount,
-                    badgeText: 'طلبات جديدة',
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              AdminPhoneRequestsPage(adminId: widget.userId),
-                        ),
                       );
 
                       // تحديث العدد بعد الرجوع
