@@ -155,10 +155,24 @@ class _AddCourierPageState extends State<AddCourierPage> {
       }
 
       // بعد فحص الجوال، نوقف الإضافة إذا بقيت أخطاء أخرى
+      // بعد فحص الجوال، نوقف الإضافة إذا بقيت أخطاء أخرى
       if (hasError) return;
 
-      final normalizedPhone = '+966${phone.substring(1)}';
+      // نافذة تأكيد إضافة المندوب
+      if (!mounted) return;
 
+      final confirmed = await AppDesign.showAppDialog(
+        context: context,
+        title: 'تأكيد إضافة المندوب',
+        message: 'هل أنت متأكد من إضافة هذا المندوب؟',
+        confirmText: 'تأكيد',
+        cancelText: 'إلغاء',
+      );
+
+      // إذا اختار الإلغاء، لا تتم الإضافة
+      if (!confirmed) return;
+
+      final normalizedPhone = '+966${phone.substring(1)}';
       final userRef = _firestore.collection('Users').doc();
       final courierRef = _firestore.collection('couriers').doc();
       final userId = userRef.id;
