@@ -12,12 +12,12 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final email = TextEditingController();
+  final phoneController = TextEditingController();
   String? emailError;
   String? generalError;
 
   Future<void> login() async {
-    String phoneText = email.text.trim();
+    String phoneText = phoneController.text.trim();
 
     setState(() {
       emailError = null;
@@ -176,7 +176,7 @@ class _LoginPageState extends State<LoginPage> {
                     // 📱 رقم الجوال
                     buildField(
                       "رقم الجوال",
-                      email,
+                      phoneController,
                       Icons.phone,
                       errorText: emailError,
                     ),
