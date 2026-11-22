@@ -79,10 +79,7 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
       lastNameController.text = userData['lastName']?.toString() ?? '';
 
-      phoneController.text =
-          userData['phone']?.toString() ??
-          userData['phoneNumber']?.toString() ??
-          '';
+      phoneController.text = userData['phone']?.toString() ?? '';
 
       // تحويل الرقم الدولي إلى الصيغة المحلية
       if (phoneController.text.startsWith('+966')) {
@@ -121,41 +118,29 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
     if (phone.isEmpty || phone.length < 10) {
       if (!mounted) return;
-
       setState(() {
         phoneError = null;
       });
-
       return;
     }
 
     if (!RegExp(r'^05[0-9]{8}$').hasMatch(phone)) {
       if (!mounted) return;
-
       setState(() {
         phoneError = 'رقم الجوال غير صحيح';
       });
-
       return;
     }
 
     if (!mounted) return;
-
     setState(() {
       phoneError = null;
     });
 
     try {
-      final normalizedPhone = '+966${phone.substring(1)}';
-
       final phoneCheck = await _firestore
           .collection('Users')
           .where('phone', isEqualTo: phone)
-          .get();
-
-      final normalizedPhoneCheck = await _firestore
-          .collection('Users')
-          .where('phoneNumber', isEqualTo: normalizedPhone)
           .get();
 
       if (!mounted || requestId != phoneCheckRequestId) {
@@ -166,16 +151,8 @@ class _EditCourierPageState extends State<EditCourierPage> {
         (doc) => doc.id != widget.userId,
       );
 
-      final normalizedPhoneUsedByAnotherUser = normalizedPhoneCheck.docs.any(
-        (doc) => doc.id != widget.userId,
-      );
-
       setState(() {
-        if (phoneUsedByAnotherUser || normalizedPhoneUsedByAnotherUser) {
-          phoneError = 'رقم الجوال مسجل مسبقًا';
-        } else {
-          phoneError = null;
-        }
+        phoneError = phoneUsedByAnotherUser ? 'رقم الجوال مسجل مسبقًا' : null;
       });
     } catch (e) {
       debugPrint('Phone duplicate check error: $e');
@@ -238,28 +215,17 @@ class _EditCourierPageState extends State<EditCourierPage> {
     });
 
     try {
-      final normalizedPhone = '+966${phone.substring(1)}';
-
       // إعادة فحص رقم الجوال قبل الحفظ
       final phoneCheck = await _firestore
           .collection('Users')
           .where('phone', isEqualTo: phone)
           .get();
 
-      final normalizedPhoneCheck = await _firestore
-          .collection('Users')
-          .where('phoneNumber', isEqualTo: normalizedPhone)
-          .get();
-
       final phoneUsedByAnotherUser = phoneCheck.docs.any(
         (doc) => doc.id != widget.userId,
       );
 
-      final normalizedPhoneUsedByAnotherUser = normalizedPhoneCheck.docs.any(
-        (doc) => doc.id != widget.userId,
-      );
-
-      if (phoneUsedByAnotherUser || normalizedPhoneUsedByAnotherUser) {
+      if (phoneUsedByAnotherUser) {
         if (!mounted) return;
 
         setState(() {
