@@ -379,11 +379,8 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
 
                             final name = '$firstName $lastName'.trim();
 
-                            final phone =
-                                (userData['phoneNumber'] ??
-                                        userData['phone'] ??
-                                        'غير متوفر')
-                                    .toString();
+                            final phone = (userData['phone'] ?? 'غير متوفر')
+                                .toString();
 
                             // البحث بالاسم أو رقم الجوال
                             final searchName = name.toLowerCase();
