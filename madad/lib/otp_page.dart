@@ -220,20 +220,6 @@ class _OtpPageState extends State<OtpPage> {
         }
 
         if (userCheck.docs.isEmpty) {
-          userCheck = await users
-              .where('phoneNumber', isEqualTo: internationalPhone)
-              .limit(1)
-              .get();
-        }
-
-        if (userCheck.docs.isEmpty) {
-          userCheck = await users
-              .where('phoneNumber', isEqualTo: localPhone)
-              .limit(1)
-              .get();
-        }
-
-        if (userCheck.docs.isEmpty) {
           await FirebaseAuth.instance.signOut();
 
           if (mounted) {
