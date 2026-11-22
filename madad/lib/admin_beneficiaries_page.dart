@@ -7,18 +7,13 @@ import 'app_design.dart';
 class AdminBeneficiariesPage extends StatefulWidget {
   final String userId;
 
-  const AdminBeneficiariesPage({
-    super.key,
-    required this.userId,
-  });
+  const AdminBeneficiariesPage({super.key, required this.userId});
 
   @override
-  State<AdminBeneficiariesPage> createState() =>
-      _AdminBeneficiariesPageState();
+  State<AdminBeneficiariesPage> createState() => _AdminBeneficiariesPageState();
 }
 
-class _AdminBeneficiariesPageState
-    extends State<AdminBeneficiariesPage> {
+class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   int selectedTab = 0;
@@ -32,10 +27,7 @@ class _AdminBeneficiariesPageState
   }
 
   String _getStatus(Map<String, dynamic> data) {
-    return (data['status'] ?? 'pending')
-        .toString()
-        .trim()
-        .toLowerCase();
+    return (data['status'] ?? 'pending').toString().trim().toLowerCase();
   }
 
   String _getSocialSecurityNumber(Map<String, dynamic> data) {
@@ -46,10 +38,7 @@ class _AdminBeneficiariesPageState
     return (data['socialSecurityPdfUrl'] ?? '').toString();
   }
 
-  String _getUserId(
-    String beneficiaryDocumentId,
-    Map<String, dynamic> data,
-  ) {
+  String _getUserId(String beneficiaryDocumentId, Map<String, dynamic> data) {
     final value = data['userId'];
 
     if (value is DocumentReference) {
@@ -74,8 +63,7 @@ class _AdminBeneficiariesPageState
     if (userId.trim().isEmpty) return null;
 
     try {
-      final document =
-          await _firestore.collection('Users').doc(userId).get();
+      final document = await _firestore.collection('Users').doc(userId).get();
 
       if (!document.exists) return null;
 
@@ -91,11 +79,9 @@ class _AdminBeneficiariesPageState
       return 'مستفيد';
     }
 
-    final firstName =
-        (data['firstName'] ?? '').toString().trim();
+    final firstName = (data['firstName'] ?? '').toString().trim();
 
-    final lastName =
-        (data['lastName'] ?? '').toString().trim();
+    final lastName = (data['lastName'] ?? '').toString().trim();
 
     final fullName = '$firstName $lastName'.trim();
 
@@ -117,8 +103,7 @@ class _AdminBeneficiariesPageState
       return phone;
     }
 
-    final phoneNumber =
-        (data['phoneNumber'] ?? '').toString().trim();
+    final phoneNumber = (data['phoneNumber'] ?? '').toString().trim();
 
     if (phoneNumber.isNotEmpty) {
       return phoneNumber;
@@ -127,32 +112,26 @@ class _AdminBeneficiariesPageState
     return 'غير متوفر';
   }
 
-void _addBeneficiaryNotificationToBatch({
-  required WriteBatch batch,
-  required String beneficiaryUserId,
-  required bool isApproved,
-  String? rejectionReason,
-}) {
-  final notificationRef =
-      _firestore.collection('notifications').doc();
+  void _addBeneficiaryNotificationToBatch({
+    required WriteBatch batch,
+    required String beneficiaryUserId,
+    required bool isApproved,
+    String? rejectionReason,
+  }) {
+    final notificationRef = _firestore.collection('notifications').doc();
 
-  batch.set(notificationRef, {
-    'userId': beneficiaryUserId,
-    'type': isApproved
-        ? 'beneficiary_approved'
-        : 'beneficiary_rejected',
-    'title': isApproved
-        ? 'تم قبول طلبك'
-        : 'تم رفض طلبك',
-    'message': isApproved
-        ? 'تم قبول طلب تسجيلك كمستفيد في مدد. يمكنك الآن إضافة الكسوات إلى السلة وإرسال طلبك.'
-        : 'تعذر قبول طلب تسجيلك كمستفيد في مدد.',
-    if (!isApproved)
-      'rejectionReason': rejectionReason?.trim() ?? '',
-    'isRead': false,
-    'createdAt': FieldValue.serverTimestamp(),
-  });
-}
+    batch.set(notificationRef, {
+      'userId': beneficiaryUserId,
+      'type': isApproved ? 'beneficiary_approved' : 'beneficiary_rejected',
+      'title': isApproved ? 'تم قبول طلبك' : 'تم رفض طلبك',
+      'message': isApproved
+          ? 'تم قبول طلب تسجيلك كمستفيد في مدد. يمكنك الآن إضافة الكسوات إلى السلة وإرسال طلبك.'
+          : 'تعذر قبول طلب تسجيلك كمستفيد في مدد.',
+      if (!isApproved) 'rejectionReason': rejectionReason?.trim() ?? '',
+      'isRead': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
 
   // =========================================================
   // Approve Beneficiary
@@ -172,37 +151,33 @@ void _addBeneficiaryNotificationToBatch({
     if (!confirmed) return;
 
     try {
-      final beneficiaryRef =
-          _firestore.collection('beneficiaries').doc(beneficiaryId);
-
-
+      final beneficiaryRef = _firestore
+          .collection('beneficiaries')
+          .doc(beneficiaryId);
 
       final batch = _firestore.batch();
 
       // تحديث حالة المستفيد
-      batch.update(
-        beneficiaryRef,
-        {
-          'status': 'approved',
-          'approvedAt': FieldValue.serverTimestamp(),
-          'approvedBy': widget.userId,
+      batch.update(beneficiaryRef, {
+        'status': 'approved',
+        'approvedAt': FieldValue.serverTimestamp(),
+        'approvedBy': widget.userId,
 
-          // إزالة أي بيانات رفض سابقة
-          'rejectionReason': FieldValue.delete(),
-          'rejectedAt': FieldValue.delete(),
-          'rejectedBy': FieldValue.delete(),
+        // إزالة أي بيانات رفض سابقة
+        'rejectionReason': FieldValue.delete(),
+        'rejectedAt': FieldValue.delete(),
+        'rejectedBy': FieldValue.delete(),
 
-          // إزالة بيانات حذف سابقة إن وجدت
-          'deletedAt': FieldValue.delete(),
-          'deletedBy': FieldValue.delete(),
-        },
+        // إزالة بيانات حذف سابقة إن وجدت
+        'deletedAt': FieldValue.delete(),
+        'deletedBy': FieldValue.delete(),
+      });
+
+      _addBeneficiaryNotificationToBatch(
+        batch: batch,
+        beneficiaryUserId: beneficiaryUserId,
+        isApproved: true,
       );
-
-_addBeneficiaryNotificationToBatch(
-  batch: batch,
-  beneficiaryUserId: beneficiaryUserId,
-  isApproved: true,
-);
 
       await batch.commit();
 
@@ -210,19 +185,13 @@ _addBeneficiaryNotificationToBatch(
 
       Navigator.of(context).pop();
 
-      AppDesign.showSuccessSnackBar(
-        context,
-        'تم قبول المستفيد بنجاح',
-      );
+      AppDesign.showSuccessSnackBar(context, 'تم قبول المستفيد بنجاح');
     } catch (e) {
       debugPrint('Approve Beneficiary Error: $e');
 
       if (!mounted) return;
 
-      AppDesign.showErrorSnackBar(
-        context,
-        'حدث خطأ أثناء قبول الطلب',
-      );
+      AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء قبول الطلب');
     }
   }
 
@@ -381,34 +350,30 @@ _addBeneficiaryNotificationToBatch(
     }
 
     try {
-      final beneficiaryRef =
-          _firestore.collection('beneficiaries').doc(beneficiaryId);
-
-
+      final beneficiaryRef = _firestore
+          .collection('beneficiaries')
+          .doc(beneficiaryId);
 
       final batch = _firestore.batch();
 
       // تحديث حالة المستفيد
-      batch.update(
-        beneficiaryRef,
-        {
-          'status': 'rejected',
-          'rejectionReason': reason.trim(),
-          'rejectedAt': FieldValue.serverTimestamp(),
-          'rejectedBy': widget.userId,
+      batch.update(beneficiaryRef, {
+        'status': 'rejected',
+        'rejectionReason': reason.trim(),
+        'rejectedAt': FieldValue.serverTimestamp(),
+        'rejectedBy': widget.userId,
 
-          // لو كان هناك قبول سابق
-          'approvedAt': FieldValue.delete(),
-          'approvedBy': FieldValue.delete(),
-        },
+        // لو كان هناك قبول سابق
+        'approvedAt': FieldValue.delete(),
+        'approvedBy': FieldValue.delete(),
+      });
+
+      _addBeneficiaryNotificationToBatch(
+        batch: batch,
+        beneficiaryUserId: beneficiaryUserId,
+        isApproved: false,
+        rejectionReason: reason,
       );
-
-_addBeneficiaryNotificationToBatch(
-  batch: batch,
-  beneficiaryUserId: beneficiaryUserId,
-  isApproved: false,
-  rejectionReason: reason,
-);
       await batch.commit();
 
       if (!mounted) return;
@@ -416,19 +381,13 @@ _addBeneficiaryNotificationToBatch(
       // إغلاق Bottom Sheet
       Navigator.of(context).pop();
 
-      AppDesign.showSuccessSnackBar(
-        context,
-        'تم رفض الطلب',
-      );
+      AppDesign.showSuccessSnackBar(context, 'تم رفض الطلب');
     } catch (e) {
       debugPrint('Reject Beneficiary Error: $e');
 
       if (!mounted) return;
 
-      AppDesign.showErrorSnackBar(
-        context,
-        'حدث خطأ أثناء رفض الطلب',
-      );
+      AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء رفض الطلب');
     }
   }
 
@@ -441,6 +400,28 @@ _addBeneficiaryNotificationToBatch(
     required String beneficiaryUserId,
     required String name,
   }) async {
+    // فحص وجود طلب نشط قبل أي شيء
+    try {
+      final hasActive = await _hasActiveRequest(beneficiaryUserId);
+
+      if (hasActive) {
+        if (!mounted) return;
+
+        AppDesign.showErrorSnackBar(
+          context,
+          'لا يمكن حذف هذا المستفيد لوجود طلب نشط لديه',
+        );
+        return;
+      }
+    } catch (e) {
+      debugPrint('Check Active Request Error: $e');
+
+      if (!mounted) return;
+
+      AppDesign.showErrorSnackBar(context, 'تعذر التحقق من طلبات المستفيد');
+      return;
+    }
+
     final confirmed = await _showConfirmDialog(
       title: 'حذف المستفيد',
       message: 'هل أنت متأكد من حذف $name من قائمة المستفيدين؟',
@@ -451,12 +432,13 @@ _addBeneficiaryNotificationToBatch(
     if (!confirmed) return;
 
     try {
-      final beneficiaryRef =
-          _firestore.collection('beneficiaries').doc(beneficiaryId);
+      final beneficiaryRef = _firestore
+          .collection('beneficiaries')
+          .doc(beneficiaryId);
 
       final batch = _firestore.batch();
 
-      // 1) Soft Delete: إيقاف الحساب في beneficiaries و Users
+      // 1) Soft Delete
       batch.update(beneficiaryRef, {
         'status': 'deleted',
         'deletedAt': FieldValue.serverTimestamp(),
@@ -480,60 +462,31 @@ _addBeneficiaryNotificationToBatch(
         batch.delete(cartDoc.reference);
       }
 
-      // 3) إلغاء الطلبات اللي ما قبلها مندوب، وإرجاع صناديقها متاحة
-      final requestsSnap = await _firestore
-          .collection('requests')
-          .where('beneficiaryId', isEqualTo: beneficiaryUserId)
-          .where('status', isEqualTo: 'requested')
-          .get();
-
-      for (final requestDoc in requestsSnap.docs) {
-        final requestData = requestDoc.data();
-        final courierId =
-            requestData['courierID'] ?? requestData['courierId'];
-
-        // الطلب اللي قبله مندوب يكمل عادي
-        if (courierId != null && courierId.toString().isNotEmpty) continue;
-
-        batch.update(requestDoc.reference, {
-          'status': 'cancelled',
-          'cancelledAt': FieldValue.serverTimestamp(),
-          'cancelReason': 'beneficiary_deleted',
-        });
-
-        final boxesSnap = await _firestore
-            .collection('donation_boxes')
-            .where('requestId', isEqualTo: requestDoc.id)
-            .get();
-
-        for (final boxDoc in boxesSnap.docs) {
-          batch.update(boxDoc.reference, {
-            'status': 'available',
-            'requestId': FieldValue.delete(),
-          });
-        }
-      }
-
       await batch.commit();
 
       if (!mounted) return;
 
       Navigator.of(context).pop();
 
-      AppDesign.showSuccessSnackBar(
-        context,
-        'تم حذف المستفيد من القائمة',
-      );
+      AppDesign.showSuccessSnackBar(context, 'تم حذف المستفيد من القائمة');
     } catch (e) {
       debugPrint('Delete Beneficiary Error: $e');
 
       if (!mounted) return;
 
-      AppDesign.showErrorSnackBar(
-        context,
-        'حدث خطأ أثناء حذف المستفيد',
-      );
+      AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء حذف المستفيد');
     }
+  }
+
+  Future<bool> _hasActiveRequest(String beneficiaryUserId) async {
+    final snap = await _firestore
+        .collection('requests')
+        .where('beneficiaryId', isEqualTo: beneficiaryUserId)
+        .where('status', isEqualTo: 'requested')
+        .limit(1)
+        .get();
+
+    return snap.docs.isNotEmpty;
   }
 
   // =========================================================
@@ -560,36 +513,24 @@ _addBeneficiaryNotificationToBatch(
 
   Future<void> _openPdf(String url) async {
     if (url.trim().isEmpty) {
-      AppDesign.showErrorSnackBar(
-        context,
-        'ملف إثبات الضمان غير متوفر',
-      );
+      AppDesign.showErrorSnackBar(context, 'ملف إثبات الضمان غير متوفر');
       return;
     }
 
     try {
       final uri = Uri.parse(url);
 
-      final opened = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
       if (!opened && mounted) {
-        AppDesign.showErrorSnackBar(
-          context,
-          'تعذر فتح الملف',
-        );
+        AppDesign.showErrorSnackBar(context, 'تعذر فتح الملف');
       }
     } catch (e) {
       debugPrint('Open PDF Error: $e');
 
       if (!mounted) return;
 
-      AppDesign.showErrorSnackBar(
-        context,
-        'تعذر فتح الملف',
-      );
+      AppDesign.showErrorSnackBar(context, 'تعذر فتح الملف');
     }
   }
 
@@ -611,21 +552,17 @@ _addBeneficiaryNotificationToBatch(
               const SizedBox(height: 18),
 
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: _buildTabs(),
               ),
 
               const SizedBox(height: 16),
 
               Expanded(
-                child: StreamBuilder<
-                    QuerySnapshot<Map<String, dynamic>>>(
+                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: _beneficiariesStream(),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState ==
-                        ConnectionState.waiting) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
                         child: CircularProgressIndicator(
                           color: AppDesign.primary,
@@ -654,12 +591,7 @@ _addBeneficiaryNotificationToBatch(
                     }
 
                     return ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(
-                        20,
-                        5,
-                        20,
-                        30,
-                      ),
+                      padding: const EdgeInsets.fromLTRB(20, 5, 20, 30),
                       itemCount: filteredDocs.length,
                       separatorBuilder: (context, index) =>
                           const SizedBox(height: 12),
@@ -688,12 +620,7 @@ _addBeneficiaryNotificationToBatch(
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        20,
-        18,
-        20,
-        0,
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
       child: Row(
         children: [
           IconButton(
@@ -735,33 +662,18 @@ _addBeneficiaryNotificationToBatch(
       decoration: BoxDecoration(
         color: AppDesign.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppDesign.border,
-        ),
+        border: Border.all(color: AppDesign.border),
       ),
       child: Row(
         children: [
-          Expanded(
-            child: _buildTab(
-              index: 0,
-              title: 'طلبات التسجيل',
-            ),
-          ),
-          Expanded(
-            child: _buildTab(
-              index: 1,
-              title: 'المستفيدون',
-            ),
-          ),
+          Expanded(child: _buildTab(index: 0, title: 'طلبات التسجيل')),
+          Expanded(child: _buildTab(index: 1, title: 'المستفيدون')),
         ],
       ),
     );
   }
 
-  Widget _buildTab({
-    required int index,
-    required String title,
-  }) {
+  Widget _buildTab({required int index, required String title}) {
     final selected = selectedTab == index;
 
     return InkWell(
@@ -773,22 +685,16 @@ _addBeneficiaryNotificationToBatch(
       borderRadius: BorderRadius.circular(14),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: selected
-              ? AppDesign.primary
-              : Colors.transparent,
+          color: selected ? AppDesign.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Text(
           title,
           textAlign: TextAlign.center,
           style: AppDesign.bodyStyle.copyWith(
-            color: selected
-                ? AppDesign.white
-                : AppDesign.primary,
+            color: selected ? AppDesign.white : AppDesign.primary,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -804,10 +710,7 @@ _addBeneficiaryNotificationToBatch(
     required String beneficiaryId,
     required Map<String, dynamic> beneficiaryData,
   }) {
-    final userId = _getUserId(
-      beneficiaryId,
-      beneficiaryData,
-    );
+    final userId = _getUserId(beneficiaryId, beneficiaryData);
 
     final status = _getStatus(beneficiaryData);
 
@@ -823,8 +726,7 @@ _addBeneficiaryNotificationToBatch(
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(22),
-            onTap: snapshot.connectionState ==
-                    ConnectionState.waiting
+            onTap: snapshot.connectionState == ConnectionState.waiting
                 ? null
                 : () {
                     _showBeneficiaryDetails(
@@ -839,9 +741,7 @@ _addBeneficiaryNotificationToBatch(
               decoration: BoxDecoration(
                 color: AppDesign.white,
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: AppDesign.border,
-                ),
+                border: Border.all(color: AppDesign.border),
               ),
               child: Row(
                 children: [
@@ -849,8 +749,7 @@ _addBeneficiaryNotificationToBatch(
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color:
-                          AppDesign.secondary.withOpacity(0.15),
+                      color: AppDesign.secondary.withOpacity(0.15),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -863,26 +762,21 @@ _addBeneficiaryNotificationToBatch(
                   const SizedBox(width: 14),
 
                   Expanded(
-                    child: snapshot.connectionState ==
-                            ConnectionState.waiting
+                    child: snapshot.connectionState == ConnectionState.waiting
                         ? const LinearProgressIndicator(
                             color: AppDesign.primary,
                           )
                         : Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 name,
                                 maxLines: 1,
-                                overflow:
-                                    TextOverflow.ellipsis,
-                                style:
-                                    AppDesign.h1Style.copyWith(
+                                overflow: TextOverflow.ellipsis,
+                                style: AppDesign.h1Style.copyWith(
                                   color: AppDesign.primary,
                                   fontSize: 18,
-                                  fontWeight:
-                                      FontWeight.w800,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
 
@@ -890,12 +784,9 @@ _addBeneficiaryNotificationToBatch(
 
                               Text(
                                 phone,
-                                textDirection:
-                                    TextDirection.ltr,
-                                style:
-                                    AppDesign.bodyStyle.copyWith(
-                                  color:
-                                      AppDesign.textSecondary,
+                                textDirection: TextDirection.ltr,
+                                style: AppDesign.bodyStyle.copyWith(
+                                  color: AppDesign.textSecondary,
                                   fontSize: 13,
                                 ),
                               ),
@@ -933,15 +824,9 @@ _addBeneficiaryNotificationToBatch(
     );
   }
 
-  Widget _buildStatusBadge(
-    String text,
-    IconData icon,
-  ) {
+  Widget _buildStatusBadge(String text, IconData icon) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 9,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: AppDesign.secondary.withOpacity(0.13),
         borderRadius: BorderRadius.circular(20),
@@ -949,11 +834,7 @@ _addBeneficiaryNotificationToBatch(
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 14,
-            color: AppDesign.primary,
-          ),
+          Icon(icon, size: 14, color: AppDesign.primary),
           const SizedBox(width: 5),
           Text(
             text,
@@ -981,8 +862,7 @@ _addBeneficiaryNotificationToBatch(
     final name = _getName(userData);
     final phone = _getPhone(userData);
 
-    final socialSecurityNumber =
-        _getSocialSecurityNumber(beneficiaryData);
+    final socialSecurityNumber = _getSocialSecurityNumber(beneficiaryData);
 
     final pdfUrl = _getPdfUrl(beneficiaryData);
 
@@ -997,26 +877,21 @@ _addBeneficiaryNotificationToBatch(
           textDirection: TextDirection.rtl,
           child: Container(
             constraints: BoxConstraints(
-              maxHeight:
-                  MediaQuery.of(sheetContext).size.height * 0.88,
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.88,
             ),
             decoration: const BoxDecoration(
               color: AppDesign.background,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(30),
-              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
             ),
             child: SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(
                 20,
                 14,
                 20,
-                MediaQuery.of(sheetContext).viewInsets.bottom +
-                    30,
+                MediaQuery.of(sheetContext).viewInsets.bottom + 30,
               ),
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Center(
                     child: Container(
@@ -1024,8 +899,7 @@ _addBeneficiaryNotificationToBatch(
                       height: 5,
                       decoration: BoxDecoration(
                         color: AppDesign.border,
-                        borderRadius:
-                            BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                     ),
                   ),
@@ -1036,8 +910,7 @@ _addBeneficiaryNotificationToBatch(
                     width: 72,
                     height: 72,
                     decoration: BoxDecoration(
-                      color:
-                          AppDesign.secondary.withOpacity(0.15),
+                      color: AppDesign.secondary.withOpacity(0.15),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -1078,9 +951,7 @@ _addBeneficiaryNotificationToBatch(
                     decoration: BoxDecoration(
                       color: AppDesign.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: AppDesign.border,
-                      ),
+                      border: Border.all(color: AppDesign.border),
                     ),
                     child: Row(
                       children: [
@@ -1088,10 +959,8 @@ _addBeneficiaryNotificationToBatch(
                           width: 45,
                           height: 45,
                           decoration: BoxDecoration(
-                            color: AppDesign.secondary
-                                .withOpacity(0.15),
-                            borderRadius:
-                                BorderRadius.circular(14),
+                            color: AppDesign.secondary.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                           child: const Icon(
                             Icons.picture_as_pdf_outlined,
@@ -1103,16 +972,13 @@ _addBeneficiaryNotificationToBatch(
 
                         Expanded(
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'إثبات الضمان الاجتماعي',
-                                style:
-                                    AppDesign.bodyStyle.copyWith(
+                                style: AppDesign.bodyStyle.copyWith(
                                   color: AppDesign.primary,
-                                  fontWeight:
-                                      FontWeight.w700,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: 3),
@@ -1120,10 +986,8 @@ _addBeneficiaryNotificationToBatch(
                                 pdfUrl.isEmpty
                                     ? 'لا يوجد ملف مرفق'
                                     : 'عرض الملف المرفق',
-                                style:
-                                    AppDesign.bodyStyle.copyWith(
-                                  color:
-                                      AppDesign.textSecondary,
+                                style: AppDesign.bodyStyle.copyWith(
+                                  color: AppDesign.textSecondary,
                                   fontSize: 12,
                                 ),
                               ),
@@ -1153,10 +1017,8 @@ _addBeneficiaryNotificationToBatch(
                       child: ElevatedButton.icon(
                         onPressed: () {
                           _approveBeneficiary(
-                            beneficiaryId:
-                                beneficiaryId,
-                            beneficiaryUserId:
-                                beneficiaryUserId,
+                            beneficiaryId: beneficiaryId,
+                            beneficiaryUserId: beneficiaryUserId,
                             name: name,
                           );
                         },
@@ -1164,18 +1026,13 @@ _addBeneficiaryNotificationToBatch(
                           Icons.check_rounded,
                           color: Colors.white,
                         ),
-                        label: const Text(
-                          'قبول الطلب',
-                        ),
+                        label: const Text('قبول الطلب'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              AppDesign.primary,
-                          foregroundColor:
-                              Colors.white,
+                          backgroundColor: AppDesign.primary,
+                          foregroundColor: Colors.white,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(18),
                           ),
                         ),
                       ),
@@ -1188,10 +1045,8 @@ _addBeneficiaryNotificationToBatch(
                       child: OutlinedButton.icon(
                         onPressed: () {
                           _showRejectDialog(
-                            beneficiaryId:
-                                beneficiaryId,
-                            beneficiaryUserId:
-                                beneficiaryUserId,
+                            beneficiaryId: beneficiaryId,
+                            beneficiaryUserId: beneficiaryUserId,
                             name: name,
                           );
                         },
@@ -1207,12 +1062,9 @@ _addBeneficiaryNotificationToBatch(
                           ),
                         ),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(
-                            color: AppDesign.primary,
-                          ),
+                          side: const BorderSide(color: AppDesign.primary),
                           shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(18),
                           ),
                         ),
                       ),
@@ -1225,10 +1077,8 @@ _addBeneficiaryNotificationToBatch(
                       child: OutlinedButton.icon(
                         onPressed: () {
                           _deleteBeneficiary(
-                            beneficiaryId:
-                                beneficiaryId,
-                            beneficiaryUserId:
-                                beneficiaryUserId,
+                            beneficiaryId: beneficiaryId,
+                            beneficiaryUserId: beneficiaryUserId,
                             name: name,
                           );
                         },
@@ -1244,12 +1094,9 @@ _addBeneficiaryNotificationToBatch(
                           ),
                         ),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(
-                            color: AppDesign.primary,
-                          ),
+                          side: const BorderSide(color: AppDesign.primary),
                           shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(18),
                           ),
                         ),
                       ),
@@ -1278,24 +1125,17 @@ _addBeneficiaryNotificationToBatch(
       decoration: BoxDecoration(
         color: AppDesign.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppDesign.border,
-        ),
+        border: Border.all(color: AppDesign.border),
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: AppDesign.primary,
-            size: 22,
-          ),
+          Icon(icon, color: AppDesign.primary, size: 22),
 
           const SizedBox(width: 12),
 
           Expanded(
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   label,
@@ -1345,8 +1185,7 @@ _addBeneficiaryNotificationToBatch(
               width: 76,
               height: 76,
               decoration: BoxDecoration(
-                color:
-                    AppDesign.secondary.withOpacity(0.13),
+                color: AppDesign.secondary.withOpacity(0.13),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
