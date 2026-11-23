@@ -127,12 +127,16 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
         return;
       }
 
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => BeneficiaryCartPage(userId: widget.userId),
         ),
       );
+
+      // Back from the cart: reload the donation items.
+      if (!mounted) return;
+      await _onRefresh();
     } catch (e) {
       if (!mounted) return;
 
@@ -1238,6 +1242,7 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
                                       userId: widget.userId,
                                       itemId: box["itemId"].toString(),
                                       boxId: box["boxId"].toString(),
+                                      onReturn: _onRefresh,
                                     ),
                                   );
                                 },
@@ -1422,6 +1427,7 @@ class ClothesBoxCard extends StatelessWidget {
   final String boxId;
   final String type;
   final String size;
+  final Future<void> Function()? onReturn;
 
   const ClothesBoxCard({
     super.key,
@@ -1433,6 +1439,7 @@ class ClothesBoxCard extends StatelessWidget {
     required this.boxId,
     required this.type,
     required this.size,
+    this.onReturn,
   });
 
   @override
@@ -1533,8 +1540,8 @@ class ClothesBoxCard extends StatelessWidget {
                         backgroundColor: AppDesign.primary,
                         foregroundColor: Colors.white,
                       ),
-                      onPressed: () {
-                        Navigator.push(
+                      onPressed: () async {
+                        await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => BeneficiaryViewItemPage(
@@ -1544,6 +1551,7 @@ class ClothesBoxCard extends StatelessWidget {
                             ),
                           ),
                         );
+                        await onReturn?.call();
                       },
                       child: const Text("عرض التفاصيل"),
                     ),
