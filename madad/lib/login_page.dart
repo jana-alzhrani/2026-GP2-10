@@ -13,24 +13,24 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final phoneController = TextEditingController();
-  String? emailError;
+  String? phoneError;
   String? generalError;
 
   Future<void> login() async {
     String phoneText = phoneController.text.trim();
 
     setState(() {
-      emailError = null;
+      phoneError = null;
       generalError = null;
     });
 
     bool hasError = false;
 
     if (phoneText.isEmpty) {
-      emailError = "الرجاء تعبئة الحقل";
+      phoneError = "الرجاء تعبئة الحقل";
       hasError = true;
     } else if (phoneText.length != 10 || !phoneText.startsWith('05')) {
-      emailError = "رقم الجوال غير صحيح";
+      phoneError = "رقم الجوال غير صحيح";
       hasError = true;
     }
 
@@ -47,7 +47,7 @@ class _LoginPageState extends State<LoginPage> {
 
       if (userCheck.docs.isEmpty) {
         setState(() {
-          emailError = "رقم الجوال غير مسجل";
+          phoneError = "رقم الجوال غير مسجل";
         });
         return;
       }
@@ -60,7 +60,7 @@ class _LoginPageState extends State<LoginPage> {
 
       if (accountStatus == 'deleted') {
         setState(() {
-          emailError = "تم إيقاف هذا الحساب";
+          phoneError = "تم إيقاف هذا الحساب";
         });
         return;
       }
@@ -178,7 +178,7 @@ class _LoginPageState extends State<LoginPage> {
                       "رقم الجوال",
                       phoneController,
                       Icons.phone,
-                      errorText: emailError,
+                      errorText: phoneError,
                     ),
 
                     AppGap.xl,
