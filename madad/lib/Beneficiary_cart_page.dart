@@ -35,7 +35,8 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
   // ---- Cart data cache (used by pull-to-refresh) ----
   QuerySnapshot? _lastCartSnapshot; // latest cart docs from the stream
   Future<_CartData>? _dataFuture; // items + limits for those docs
-  _CartData? _lastData; // last loaded data, shown while reloading
+  _CartData? _lastData;
+  int _reloadKey = 0;
 
   @override
   void initState() {
@@ -129,7 +130,7 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
       return;
     }
 
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => BeneficiaryDeliveryMethodPage(
@@ -138,6 +139,10 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
         ),
       ),
     );
+
+    // Back from the delivery page (without ordering): reload cart items + limits.
+    if (!mounted) return;
+    await _onRefresh();
   }
 
   // ============================================================
@@ -146,17 +151,13 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
 
   /// Pull-to-refresh: reloads the cart items and the limits.
   Future<void> _onRefresh() async {
-    final snap = _lastCartSnapshot;
-    if (snap == null) return;
-
-    final future = _loadCartData(snap.docs);
-    setState(() => _dataFuture = future);
-
-    try {
-      await future;
-    } catch (e) {
-      debugPrint('CART REFRESH ERROR: $e');
-    }
+    if (!mounted) return;
+    setState(() {
+      _reloadKey++;
+      _lastCartSnapshot = null;
+      _dataFuture = null;
+      // _lastData is kept so the old list stays visible until the new one loads.
+    });
   }
 
   Future<_CartData> _loadCartData(List<QueryDocumentSnapshot> cartDocs) async {
@@ -290,7 +291,7 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
             ? const Center(child: CircularProgressIndicator())
             : !_isApproved
             ? _buildNotApproved()
-            : _buildCartBody(),
+            : KeyedSubtree(key: ValueKey(_reloadKey), child: _buildCartBody()),
       ),
     );
   }
@@ -476,8 +477,8 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
 
     return GestureDetector(
       onTap: isAvailable && itemId.isNotEmpty
-          ? () {
-              Navigator.push(
+          ? () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => BeneficiaryViewItemPage(
@@ -487,6 +488,10 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
                   ),
                 ),
               );
+
+              // Back from the item page: reload cart items + limits.
+              if (!mounted) return;
+              await _onRefresh();
             }
           : null,
       child: Container(
