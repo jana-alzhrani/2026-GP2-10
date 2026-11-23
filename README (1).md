@@ -3,10 +3,13 @@ Graduation Project – Group 10
 King Saud University
 
 ## 1. Project Overview
-Madad is an Android mobile application that connects donors with verified beneficiaries through a secure and organized clothing donation platform. Donors list clothing items with images and details, beneficiaries browse the available donations and request the items that suit their needs, and couriers deliver the donations between donors, the warehouse and beneficiaries.
+Madad is an Android mobile application designed to connect donors with verified beneficiaries through a secure and organized clothing donation platform. The application enables donors to list clothing items with detailed information and images, while allowing beneficiaries to browse available donations and request suitable items based on their needs.
 
-The main goal of Madad is to improve the clothing donation process in Saudi Arabia by providing a fair, transparent and user-friendly digital solution, in alignment with Saudi Vision 2030.
+The main goal of Madad is to improve the clothing donation process in Saudi Arabia by providing a fair, transparent, and user-friendly digital solution. The platform helps reduce unorganized distribution and enhances communication between donors, beneficiaries, and administrators.
 
+Madad includes features such as donation tracking, delivery method selection, beneficiary verification, and AI-powered image verification to ensure uploaded items meet quality standards before being published. The system also supports privacy-focused delivery options and promotes efficient distribution of donations within the community.
+
+By combining digital transformation with charitable work, Madad aims to support social responsibility and contribute to a more sustainable and connected community in alignment with Saudi Vision 2030.
 ___________________________________________________________________
 
 ## 2. Key Features
