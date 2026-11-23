@@ -98,7 +98,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
       // عدد المناديب
       // -----------------------------------------
       final int couriers = couriersSnapshot.docs
-          .where((d) => (d.data()['statues'] ?? '').toString() != 'deleted')
+          .where(
+            (d) =>
+                (d.data()['status'] ?? '').toString().trim().toLowerCase() !=
+                'deleted',
+          )
           .length;
 
       setState(() {
