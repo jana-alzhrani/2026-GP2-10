@@ -389,39 +389,38 @@ class AppDesign {
     ),
   );
 
-  static Future<bool> showAppDialog({
-    required BuildContext context,
-    required String title,
-    required String message,
-    String confirmText = 'نعم',
-    String cancelText = 'إلغاء',
-  }) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
+ static Future<bool> showAppDialog({
+  required BuildContext context,
+  required String title,
+  required String message,
+  String confirmText = 'نعم',
+  String cancelText = 'إلغاء',
+}) async {
+  return await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
             backgroundColor: const Color(0xFFF7FAFB),
             surfaceTintColor: Colors.transparent,
             elevation: 0,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 70),
-
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 24,
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-
-            contentPadding: EdgeInsets.zero,
-
-            content: SizedBox(
-              width: 230,
-              height: 175,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 20, 18, 14),
+            contentPadding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: SingleChildScrollView(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       title,
                       textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontFamily: AppDesign.fontFamily,
                         fontSize: 18,
@@ -429,66 +428,56 @@ class AppDesign {
                         color: Colors.black,
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          message,
-                          textAlign: TextAlign.center,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: AppDesign.fontFamily,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w400,
-                            color: Colors.black,
-                            height: 1.15,
-                          ),
-                        ),
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      softWrap: true,
+                      style: const TextStyle(
+                        fontFamily: AppDesign.fontFamily,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black,
+                        height: 1.4,
                       ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: Text(
-                            cancelText,
-                            style: const TextStyle(
-                              fontFamily: AppDesign.fontFamily,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: Text(
-                            confirmText,
-                            style: const TextStyle(
-                              fontFamily: AppDesign.fontFamily,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),
               ),
             ),
+            actionsAlignment: MainAxisAlignment.spaceEvenly,
+            actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(
+                  cancelText,
+                  style: const TextStyle(
+                    fontFamily: AppDesign.fontFamily,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(
+                  confirmText,
+                  style: const TextStyle(
+                    fontFamily: AppDesign.fontFamily,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ) ??
-        false;
-  }
+        ),
+      ) ??
+      false;
+}
 
   static void showSuccessSnackBar(
     BuildContext context,
