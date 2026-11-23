@@ -28,8 +28,6 @@ ____________________________________
 
 Supervisor: Dr. Arwa Alhussain
 
-Position: Faculty Member, Department of Information Technology
-University: King Saud University
 
 Acknowledgment
 
