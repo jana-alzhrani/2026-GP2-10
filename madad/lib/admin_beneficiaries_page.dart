@@ -18,6 +18,75 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
   int selectedTab = 0;
 
+  // البحث
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  // كاش لبيانات المستخدمين حتى لا يعاد تحميلها مع كل حرف
+  final Map<String, Future<Map<String, dynamic>?>> _userFutures = {};
+
+  Future<Map<String, dynamic>?> _getUserDataCached(String userId) {
+    return _userFutures.putIfAbsent(userId, () => _getUserData(userId));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _normalizePhone(String value) {
+    return value.replaceAll(RegExp(r'[\s+\-()]'), '').toLowerCase();
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: TextField(
+        controller: _searchController,
+        textDirection: TextDirection.rtl,
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value.trim().toLowerCase();
+          });
+        },
+        decoration: InputDecoration(
+          hintText: 'ابحث باسم المستفيد أو رقم الجوال',
+          hintTextDirection: TextDirection.rtl,
+          prefixIcon: const Icon(Icons.search, color: AppDesign.primary),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                    });
+                  },
+                )
+              : null,
+          filled: true,
+          fillColor: AppDesign.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 17,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide(color: AppDesign.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide(color: AppDesign.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: AppDesign.primary, width: 1.5),
+          ),
+        ),
+      ),
+    );
+  }
   // =========================================================
   // Firestore
   // =========================================================
@@ -556,6 +625,10 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
                 child: _buildTabs(),
               ),
 
+              const SizedBox(height: 14),
+
+              _buildSearchField(),
+
               const SizedBox(height: 16),
 
               Expanded(
@@ -715,12 +788,25 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
     final status = _getStatus(beneficiaryData);
 
     return FutureBuilder<Map<String, dynamic>?>(
-      future: _getUserData(userId),
+      future: _getUserDataCached(userId),
       builder: (context, snapshot) {
         final userData = snapshot.data;
 
         final name = _getName(userData);
         final phone = _getPhone(userData);
+
+        // البحث بالاسم أو رقم الجوال
+        if (_searchQuery.isNotEmpty &&
+            snapshot.connectionState != ConnectionState.waiting) {
+          final matchesName = name.toLowerCase().contains(_searchQuery);
+          final matchesPhone = _normalizePhone(
+            phone,
+          ).contains(_normalizePhone(_searchQuery));
+
+          if (!matchesName && !matchesPhone) {
+            return const SizedBox.shrink();
+          }
+        }
 
         return Material(
           color: Colors.transparent,
