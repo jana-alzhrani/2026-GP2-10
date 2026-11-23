@@ -196,7 +196,6 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
       return;
     }
 
-    final TextEditingController searchController = TextEditingController();
     List<String> filteredDistricts = List.from(riyadhDistricts);
 
     final result = await showModalBottomSheet<String>(
@@ -208,7 +207,7 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
           top: Radius.circular(AppDesign.radiusXL),
         ),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
             return Directionality(
@@ -247,11 +246,10 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
                       ),
                       AppGap.md,
                       TextField(
-                        controller: searchController,
                         autofocus: true,
                         decoration: const InputDecoration(
                           labelText: 'ابحث باسم الحي',
-                          hintText: 'مثال: المل',
+                          hintText: 'مثال: الملقا',
                           prefixIcon: Icon(Icons.search),
                         ),
                         onChanged: (value) {
@@ -262,8 +260,7 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
                                 ? List.from(riyadhDistricts)
                                 : riyadhDistricts
                                       .where(
-                                        (district) =>
-                                            district.startsWith(query),
+                                        (district) => district.contains(query),
                                       )
                                       .toList();
                           });
@@ -299,7 +296,7 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
                                           )
                                         : null,
                                     onTap: () {
-                                      Navigator.pop(context, district);
+                                      Navigator.pop(sheetContext, district);
                                     },
                                   );
                                 },
@@ -315,7 +312,7 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
       },
     );
 
-    searchController.dispose();
+    if (!mounted) return;
 
     if (result != null) {
       setState(() {
