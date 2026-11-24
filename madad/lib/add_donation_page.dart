@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -25,6 +24,9 @@ class AddDonationPage extends StatefulWidget {
 
 class _AddDonationPageState extends State<AddDonationPage> {
   bool inputsLocked = false;
+
+  // يمنع الحفظ المزدوج للصندوق (ضغطتين = صندوقين)
+  bool _saving = false;
 
   String? selectedGender;
   String? donationId;
@@ -392,9 +394,13 @@ class _AddDonationPageState extends State<AddDonationPage> {
     final ImagePicker picker = ImagePicker();
 
     try {
+      // ✅ تصغير أبعاد الصورة: صور الكاميرا كبيرة جداً (12MP+) وتفشل
+      // في فك الترميز داخل القوائم. 1024px كافية للعرض والفحص.
       final XFile? image = await picker.pickImage(
         source: source,
-        imageQuality: 60,
+        imageQuality: 70,
+        maxWidth: 1024,
+        maxHeight: 1024,
       );
 
       if (image == null) return;
@@ -423,7 +429,11 @@ class _AddDonationPageState extends State<AddDonationPage> {
   Future<Map<String, String>> uploadImage(Uint8List bytes, String path) async {
     final ref = FirebaseStorage.instance.ref().child(path);
 
-    await ref.putData(bytes);
+    // ✅ تحديد نوع الملف صراحة (بدونه يتخزن application/octet-stream)
+    await ref.putData(
+      bytes,
+      SettableMetadata(contentType: _detectMime(bytes, 'image/jpeg')),
+    );
 
     final url = await ref.getDownloadURL();
 
@@ -477,7 +487,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
     }
   }
 
-
   // نوع الصورة من أول بايتات الملف (WEBP / PNG / JPEG) عشان Gemini يقرأها صح
   String _detectMime(Uint8List bytes, String? fallback) {
     if (bytes.length > 12 &&
@@ -486,7 +495,10 @@ class _AddDonationPageState extends State<AddDonationPage> {
       return 'image/webp';
     }
     if (bytes.length > 4 &&
-        bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
       return 'image/png';
     }
     if (bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8) {
@@ -582,8 +594,8 @@ If it is valid, answer only with JSON (no extra text) in this format:
             String? detectedType;
 
             if (geminiJson != null) {
-              detectedType =
-                  typeMap[(geminiJson['type'] ?? '').toString().trim().toLowerCase()];
+              detectedType = typeMap[
+                  (geminiJson['type'] ?? '').toString().trim().toLowerCase()];
             } else if (cleaned.contains("-")) {
               String typeEng = cleaned.split("-")[1].trim();
 
@@ -684,7 +696,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
       if (item['type'] == "حذاء" && item['size'] == null) {
         return false;
       }
-
     }
 
     return true;
@@ -695,6 +706,9 @@ If it is valid, answer only with JSON (no extra text) in this format:
   // ============================================================
 
   Future<void> _submitBox(int box) async {
+    // ✅ منع الحفظ المزدوج
+    if (_saving) return;
+
     if (!validateBoxBeforeSave(box)) {
       AppDesign.showErrorSnackBar(context, "يرجى إكمال جميع الحقول");
 
@@ -709,6 +723,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
     if (!confirm) return;
 
+    // ممكن ينضغط مرتين وقت الحوار
+    if (_saving) return;
+    setState(() => _saving = true);
+
     try {
       final user = FirebaseAuth.instance.currentUser;
 
@@ -721,8 +739,12 @@ If it is valid, answer only with JSON (no extra text) in this format:
       // 1) رفع الصور أولاً
       final List<Map<String, String>> uploads = [];
 
+      // اسم فريد لكل رفعة عشان ما يكتب ملف فوق ملف
+      final int stamp = DateTime.now().millisecondsSinceEpoch;
+
       for (int i = 0; i < items.length; i++) {
-        final filePath = 'donations/$donationId/boxes/box_$box/item_$i.jpg';
+        final filePath =
+            'donations/$donationId/boxes/box_$box/item_${i}_$stamp.jpg';
 
         final Uint8List imageBytes = items[i]['image'];
 
@@ -767,8 +789,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
           'imageUrl': uploads[i]['url'],
           'imagePath': uploads[i]['path'],
           'description': (items[i]['description'] ?? '').toString(),
-            'status': 'draft',   
-
+          'status': 'draft',
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
@@ -803,6 +824,8 @@ If it is valid, answer only with JSON (no extra text) in this format:
       if (!mounted) return;
 
       AppDesign.showErrorSnackBar(context, "فشل الحفظ: $e");
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -1105,11 +1128,13 @@ If it is valid, answer only with JSON (no extra text) in this format:
                     Row(
                       children: [
                         TextButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              openedBox = null;
-                            });
-                          },
+                          onPressed: _saving
+                              ? null
+                              : () {
+                                  setState(() {
+                                    openedBox = null;
+                                  });
+                                },
                           icon: const Icon(Icons.arrow_back),
                           label: const Text("رجوع"),
                         ),
@@ -1141,8 +1166,9 @@ If it is valid, answer only with JSON (no extra text) in this format:
                                   // الصورة
                                   // ==================================================
                                   GestureDetector(
-                                    onTap: () =>
-                                        _pickItemImage(openedBox!, idx),
+                                    onTap: _saving
+                                        ? null
+                                        : () => _pickItemImage(openedBox!, idx),
                                     child: Container(
                                       height: 90,
                                       width: 90,
@@ -1283,15 +1309,21 @@ If it is valid, answer only with JSON (no extra text) in this format:
                     AppGap.lg,
 
                     // ==================================================
-                    // حفظ الصندوق (معطّل لين تكتمل كل البيانات)
+                    // حفظ الصندوق (معطّل لين تكتمل كل البيانات أو أثناء الحفظ)
                     // ==================================================
                     ElevatedButton(
-                      onPressed: validateBoxBeforeSave(openedBox!)
+                      onPressed: (!_saving && validateBoxBeforeSave(openedBox!))
                           ? () async {
                               await _submitBox(openedBox!);
                             }
                           : null,
-                      child: const Text("حفظ الصندوق"),
+                      child: _saving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text("حفظ الصندوق"),
                     ),
                   ],
                 ),
@@ -1302,7 +1334,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
               // تم
               // ==================================================
               ElevatedButton(
-                onPressed: (totalBoxes > 0 && allBoxesSaved())
+                onPressed: (totalBoxes > 0 && allBoxesSaved() && !_saving)
                     ? () async {
                         try {
                           final user = FirebaseAuth.instance.currentUser;
