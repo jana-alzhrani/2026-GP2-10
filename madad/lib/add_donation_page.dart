@@ -26,6 +26,7 @@ class _AddDonationPageState extends State<AddDonationPage> {
   bool inputsLocked = false;
 
   // يمنع الحفظ المزدوج للصندوق (ضغطتين = صندوقين)
+  // ويمنع الرجوع أثناء الحفظ أو الحذف
   bool _saving = false;
 
   String? selectedGender;
@@ -111,7 +112,18 @@ class _AddDonationPageState extends State<AddDonationPage> {
   }
 
   bool needsSize(String? type) {
-    return ["قميص", "تيشيرت", "كنزة", "بنطلون", "تنورة", "فستان", "جاكيت", "معطف", "ثوب", "عباية"].contains(type);
+    return [
+      "قميص",
+      "تيشيرت",
+      "كنزة",
+      "بنطلون",
+      "تنورة",
+      "فستان",
+      "جاكيت",
+      "معطف",
+      "ثوب",
+      "عباية",
+    ].contains(type);
   }
 
   bool isShoe(String? type) => type == "حذاء";
@@ -384,9 +396,14 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
   // ============================================================
   // اختيار صورة القطعة
+  // - الصورة الجديدة ما تنحفظ إلا بعد ما يقبلها الفحص
+  // - لو انرفضت أو فشل الفحص نرجّع القطعة لحالتها السابقة
   // ============================================================
 
   Future<void> _pickItemImage(int box, int index) async {
+    // لا نغيّر الصورة أثناء فحص صورة سابقة لنفس القطعة
+    if (boxes[box]![index]['error'] == "جاري الفحص...") return;
+
     final ImageSource? source = await _showImageSourceBottomSheet();
 
     if (source == null) return;
@@ -409,12 +426,37 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
       if (!mounted) return;
 
+      // نسخة من القطعة قبل التغيير عشان نرجعها لو الصورة الجديدة ما نفعت
+      final Map<String, dynamic> previous = Map<String, dynamic>.from(
+        boxes[box]![index],
+      );
+
       setState(() {
         boxes[box]![index]['image'] = bytes;
+        // الصورة الجديدة غير موثقة لين ينجح الفحص
+        boxes[box]![index]['isValid'] = false;
+        boxes[box]![index]['description'] = '';
         boxes[box]![index]['error'] = null;
       });
 
-      await _verifyImageWithGemini(box, index, bytes, image.mimeType);
+      final bool ok = await _verifyImageWithGemini(
+        box,
+        index,
+        bytes,
+        image.mimeType,
+      );
+
+      if (!mounted) return;
+
+      if (!ok) {
+        final stillThere = boxes.containsKey(box) && index < boxes[box]!.length;
+
+        if (stillThere) {
+          setState(() {
+            boxes[box]![index] = previous;
+          });
+        }
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -507,13 +549,15 @@ class _AddDonationPageState extends State<AddDonationPage> {
     return fallback ?? 'image/jpeg';
   }
 
-  Future<void> _verifyImageWithGemini(
+  /// يرجع true لو الصورة صالحة (ويعبّي النوع والوصف)،
+  /// وfalse لو انرفضت أو فشل الفحص. الاستعادة تتم عند المستدعي.
+  Future<bool> _verifyImageWithGemini(
     int box,
     int index,
     Uint8List imageBytes,
     String? mimeType,
   ) async {
-    if (!mounted) return;
+    if (!mounted) return false;
 
     setState(() {
       boxes[box]![index]['error'] = "جاري الفحص...";
@@ -567,83 +611,81 @@ If it is valid, answer only with JSON (no extra text) in this format:
         }),
       );
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      if (response.statusCode != 200) {
+        AppDesign.showErrorSnackBar(
+          context,
+          "فشل الفحص: ${response.statusCode}",
+        );
+        return false;
+      }
 
-        String result = data['candidates'][0]['content']['parts'][0]['text'];
+      final data = jsonDecode(response.body);
 
-        debugPrint('Gemini response: $result');
+      String result = data['candidates'][0]['content']['parts'][0]['text'];
 
-        final geminiJson = _parseGeminiJson(result);
+      debugPrint('Gemini response: $result');
 
-        // لو الرد مو JSON نرجع للصيغة القديمة (Yes - Type)
-        // صالحة = Gemini قال valid + النوع من أنواعنا (أي شيء ثاني يُرفض)
-        final bool isValid = geminiJson != null
-            ? geminiJson['valid'] == true &&
+      final geminiJson = _parseGeminiJson(result);
+
+      // لو الرد مو JSON نرجع للصيغة القديمة (Yes - Type)
+      // صالحة = Gemini قال valid + النوع من أنواعنا (أي شيء ثاني يُرفض)
+      final bool isValid = geminiJson != null
+          ? geminiJson['valid'] == true &&
                 typeMap.containsKey(
                   (geminiJson['type'] ?? '').toString().trim().toLowerCase(),
                 )
-            : result.trim().toLowerCase().startsWith("yes");
+          : result.trim().toLowerCase().startsWith("yes");
 
-        setState(() {
-          final cleaned = result.trim().toLowerCase();
-
-          if (isValid) {
-            String? detectedType;
-
-            if (geminiJson != null) {
-              detectedType = typeMap[
-                  (geminiJson['type'] ?? '').toString().trim().toLowerCase()];
-            } else if (cleaned.contains("-")) {
-              String typeEng = cleaned.split("-")[1].trim();
-
-              detectedType = typeMap[typeEng];
-            }
-
-            // الوصف القصير (للموديل، ما يظهر للمتبرع)
-            boxes[box]![index]['description'] =
-                (geminiJson?['shortDescription'] ?? '').toString().trim();
-
-            boxes[box]![index]['isValid'] = true;
-
-            boxes[box]![index]['error'] = null;
-
-            if (detectedType != null && boxes[box]![index]['type'] == null) {
-              boxes[box]![index]['type'] = detectedType;
-            }
-
-            AppDesign.showImageValidSnackBar(context, "الصورة صالحة");
-          } else {
-            boxes[box]![index]['image'] = null;
-
-            boxes[box]![index]['type'] = null;
-
-            boxes[box]![index]['isValid'] = false;
-
-            boxes[box]![index]['size'] = null;
-
-            boxes[box]![index]['description'] = '';
-
-            boxes[box]![index]['error'] = null;
-
-            _disposeDescController('${box}_$index');
-
-            AppDesign.showImageInvalidSnackBar(context, "الصورة غير صالحة!");
-          }
-        });
-      } else {
-        setState(() {
-          boxes[box]![index]['error'] = "فشل الفحص: ${response.statusCode}";
-        });
+      if (!isValid) {
+        AppDesign.showImageInvalidSnackBar(context, "الصورة غير صالحة!");
+        return false;
       }
-    } catch (e) {
-      if (!mounted) return;
+
+      String? detectedType;
+
+      if (geminiJson != null) {
+        detectedType =
+            typeMap[(geminiJson['type'] ?? '').toString().trim().toLowerCase()];
+      } else {
+        final cleaned = result.trim().toLowerCase();
+
+        if (cleaned.contains("-")) {
+          String typeEng = cleaned.split("-")[1].trim();
+
+          detectedType = typeMap[typeEng];
+        }
+      }
 
       setState(() {
-        boxes[box]![index]['error'] = "فشل الفحص: $e";
+        // الوصف القصير (للموديل، ما يظهر للمتبرع)
+        boxes[box]![index]['description'] =
+            (geminiJson?['shortDescription'] ?? '').toString().trim();
+
+        boxes[box]![index]['isValid'] = true;
+
+        boxes[box]![index]['error'] = null;
+
+        // النوع اللي اكتشفه Gemini للصورة الجديدة هو المعتمد،
+        // عشان ما يبقى نوع قديم مع وصف صورة ثانية
+        if (detectedType != null) {
+          if (boxes[box]![index]['type'] != detectedType) {
+            boxes[box]![index]['size'] = null;
+          }
+          boxes[box]![index]['type'] = detectedType;
+        }
       });
+
+      AppDesign.showImageValidSnackBar(context, "الصورة صالحة");
+
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+
+      AppDesign.showErrorSnackBar(context, "تعذر فحص الصورة، حاول مرة أخرى");
+
+      return false;
     }
   }
 
@@ -703,6 +745,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
   // ============================================================
   // حفظ الصندوق (كل قطعة دوكمنت في كولكشن items)
+  // لو فشل الحفظ قبل الـ commit نحذف الصور اللي انرفعت للتو
   // ============================================================
 
   Future<void> _submitBox(int box) async {
@@ -727,6 +770,9 @@ If it is valid, answer only with JSON (no extra text) in this format:
     if (_saving) return;
     setState(() => _saving = true);
 
+    final List<String> uploadedPaths = []; // للتنظيف لو فشل الحفظ
+    bool committed = false;
+
     try {
       final user = FirebaseAuth.instance.currentUser;
 
@@ -747,6 +793,9 @@ If it is valid, answer only with JSON (no extra text) in this format:
             'donations/$donationId/boxes/box_$box/item_${i}_$stamp.jpg';
 
         final Uint8List imageBytes = items[i]['image'];
+
+        // نسجل المسار قبل الرفع، عشان لو فشل الرفع نصف نصف ننظف كل شي
+        uploadedPaths.add(filePath);
 
         uploads.add(await uploadImage(imageBytes, filePath));
       }
@@ -795,6 +844,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
       }
 
       await batch.commit();
+      committed = true;
 
       // بصمة كل قطعة للتوصية (بالخلفية، ما تأخر الحفظ)
       Recommender.embedInBackground(toEmbed);
@@ -821,6 +871,17 @@ If it is valid, answer only with JSON (no extra text) in this format:
         openedBox = null;
       });
     } catch (e) {
+      // الصور اللي انرفعت وما انحفظ الصندوق صارت يتيمة، نحذفها
+      if (!committed) {
+        await Future.wait(
+          uploadedPaths.map((p) async {
+            try {
+              await FirebaseStorage.instance.ref().child(p).delete();
+            } catch (_) {}
+          }),
+        );
+      }
+
       if (!mounted) return;
 
       AppDesign.showErrorSnackBar(context, "فشل الحفظ: $e");
@@ -839,45 +900,73 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
   // ============================================================
   // الرجوع
+  // يحذف التبرع الحالي: الدوكمنتات في batch واحد + الصور من Storage
   // ============================================================
 
   Future<void> _showLogoutDialog() async {
+    // ما نرجع أثناء حفظ صندوق (ممكن يحذف شي وهو يتكتب)
+    if (_saving) return;
+
     final confirm = await AppDesign.showAppDialog(
       context: context,
       title: "الرجوع",
       message: "هل أنتِ متأكدة من الرجوع؟ لن يتم حفظ التبرع الحالي.",
     );
 
-    if (!confirm) return;
+    if (!confirm || !mounted || _saving) return;
 
     final user = FirebaseAuth.instance.currentUser;
 
     if (donationId != null) {
-      // حذف القطع
-      final itemsSnap = await FirebaseFirestore.instance
-          .collection('items')
-          .where('donationId', isEqualTo: donationId)
-          .get();
+      setState(() => _saving = true);
 
-      for (var doc in itemsSnap.docs) {
-        await doc.reference.delete();
+      try {
+        final itemsSnap = await firestore
+            .collection('items')
+            .where('donationId', isEqualTo: donationId)
+            .get();
+
+        final boxesSnap = await firestore
+            .collection('donation_boxes')
+            .where('donationId', isEqualTo: donationId)
+            .get();
+
+        final batch = firestore.batch();
+        final List<String> imagePaths = [];
+
+        for (final doc in itemsSnap.docs) {
+          final p = (doc.data()['imagePath'] ?? '').toString();
+          if (p.isNotEmpty) imagePaths.add(p);
+
+          batch.delete(doc.reference);
+        }
+
+        for (final doc in boxesSnap.docs) {
+          batch.delete(doc.reference);
+        }
+
+        batch.delete(firestore.collection('donations').doc(donationId));
+
+        await batch.commit();
+
+        // بعد ما انحذفت الدوكمنتات نحذف الصور من Storage
+        await Future.wait(
+          imagePaths.map((p) async {
+            try {
+              await FirebaseStorage.instance.ref().child(p).delete();
+            } catch (e) {
+              debugPrint('Storage cleanup error: $e');
+            }
+          }),
+        );
+      } catch (e) {
+        if (!mounted) return;
+
+        setState(() => _saving = false);
+
+        AppDesign.showErrorSnackBar(context, "تعذر حذف التبرع، حاول مرة أخرى");
+        return;
       }
-
-      // حذف الصناديق
-      final boxesSnap = await FirebaseFirestore.instance
-          .collection('donation_boxes')
-          .where('donationId', isEqualTo: donationId)
-          .get();
-
-      for (var doc in boxesSnap.docs) {
-        await doc.reference.delete();
-      }
-
-      // حذف التبرع
-      await FirebaseFirestore.instance
-          .collection('donations')
-          .doc(donationId)
-          .delete();
     }
 
     if (!mounted) return;
@@ -896,383 +985,362 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: AppDesign.background,
+    // PopScope: زر الرجوع في الجوال (والإيماءة) يمر على نفس نافذة التأكيد
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _showLogoutDialog();
+      },
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          backgroundColor: AppDesign.background,
 
-        appBar: AppBar(
-          title: const Text("إضافة تبرع"),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: _showLogoutDialog,
+          appBar: AppBar(
+            title: const Text("إضافة تبرع"),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: _saving ? null : _showLogoutDialog,
+            ),
           ),
-        ),
 
-        body: SingleChildScrollView(
-          padding: AppPadding.screen,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ==================================================
-              // الجنس
-              // ==================================================
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: "الجنس",
-                  prefixIcon: Icon(Icons.person),
-                ),
-                items: ["ذكر", "أنثى"]
-                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                    .toList(),
-                onChanged: inputsLocked
-                    ? null
-                    : (v) {
-                        setState(() {
-                          selectedGender = v;
-                        });
-                      },
-                value: selectedGender,
-              ),
-
-              AppGap.md,
-
-              // ==================================================
-              // العمر
-              // ==================================================
-              DropdownButtonFormField<Map<String, dynamic>>(
-                decoration: const InputDecoration(
-                  labelText: "الفئة العمرية",
-                  prefixIcon: Icon(Icons.cake),
-                ),
-                items: ageGroups.map((age) {
-                  return DropdownMenuItem(
-                    value: age,
-                    child: Text(age['label']),
-                  );
-                }).toList(),
-                onChanged: inputsLocked
-                    ? null
-                    : (v) {
-                        setState(() {
-                          selectedAgeGroup = v;
-                        });
-                      },
-                value: selectedAgeGroup,
-              ),
-
-              // ==================================================
-              // المقاس العام
-              // ==================================================
-              if (ageNeedsSize()) ...[
-                AppGap.md,
-
+          body: SingleChildScrollView(
+            padding: AppPadding.screen,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ==================================================
+                // الجنس
+                // ==================================================
                 DropdownButtonFormField<String>(
                   decoration: const InputDecoration(
-                    labelText: "المقاس",
-                    prefixIcon: Icon(Icons.straighten),
+                    labelText: "الجنس",
+                    prefixIcon: Icon(Icons.person),
                   ),
-                  value: generalSize,
-                  items: sizeRanges
+                  items: ["ذكر", "أنثى"]
                       .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                       .toList(),
                   onChanged: inputsLocked
                       ? null
                       : (v) {
                           setState(() {
-                            generalSize = v;
+                            selectedGender = v;
                           });
                         },
+                  value: selectedGender,
                 ),
-              ],
 
-              AppGap.md,
+                AppGap.md,
 
-              // ==================================================
-              // عدد القطع
-              // ==================================================
-              TextField(
-                controller: _itemCountController,
-                keyboardType: TextInputType.number,
-                enabled: !inputsLocked,
-                onChanged: inputsLocked ? null : _updateItemCount,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: InputDecoration(
-                  labelText: "إجمالي عدد القطع",
-                  errorText: itemCountError,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                // ==================================================
+                // العمر
+                // ==================================================
+                DropdownButtonFormField<Map<String, dynamic>>(
+                  decoration: const InputDecoration(
+                    labelText: "الفئة العمرية",
+                    prefixIcon: Icon(Icons.cake),
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.blue),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.red),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.red),
-                  ),
+                  items: ageGroups.map((age) {
+                    return DropdownMenuItem(
+                      value: age,
+                      child: Text(age['label']),
+                    );
+                  }).toList(),
+                  onChanged: inputsLocked
+                      ? null
+                      : (v) {
+                          setState(() {
+                            selectedAgeGroup = v;
+                          });
+                        },
+                  value: selectedAgeGroup,
                 ),
-              ),
 
-              AppGap.lg,
+                // ==================================================
+                // المقاس العام
+                // ==================================================
+                if (ageNeedsSize()) ...[
+                  AppGap.md,
 
-              // ==================================================
-              // الصناديق
-              // ==================================================
-              if (totalBoxes > 0 && openedBox == null)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "اختر صندوق للعمل عليه:",
-                      style: AppDesign.subtitleStyle,
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: "المقاس",
+                      prefixIcon: Icon(Icons.straighten),
                     ),
-
-                    AppGap.sm,
-
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: totalBoxes,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                          ),
-                      itemBuilder: (context, idx) {
-                        int boxNum = idx + 1;
-
-                        bool isSaved = savedBoxes.contains(boxNum);
-
-                        return GestureDetector(
-                          onTap: () {
-                            if (!canOpenBox()) {
-                              AppDesign.showErrorSnackBar(
-                                context,
-                                "يرجى إكمال جميع الحقول",
-                              );
-
-                              return;
-                            }
-
-                            if (!isSaved) {
-                              setState(() {
-                                openedBox = boxNum;
-
-                                inputsLocked = true;
-                              });
-                            }
+                    value: generalSize,
+                    items: sizeRanges
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .toList(),
+                    onChanged: inputsLocked
+                        ? null
+                        : (v) {
+                            setState(() {
+                              generalSize = v;
+                            });
                           },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(
-                                AppDesign.radiusLG,
-                              ),
-                              gradient: LinearGradient(
-                                colors: isSaved
-                                    ? [AppDesign.success, AppDesign.primary]
-                                    : [
-                                        AppDesign.softGreen.withOpacity(0.2),
-                                        AppDesign.softGreen,
-                                      ],
-                              ),
-                            ),
-                            child: Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    isSaved
-                                        ? Icons.check_circle
-                                        : Icons.inventory_2,
-                                    color: Colors.white,
-                                    size: 30,
-                                  ),
+                  ),
+                ],
 
-                                  AppGap.xs,
+                AppGap.md,
 
-                                  Text(
-                                    "صندوق $boxNum",
-                                    style: AppDesign.subtitleStyle.copyWith(
-                                      color: Colors.white,
-                                    ),
-                                  ),
-
-                                  Text(
-                                    "${boxes[boxNum]?.length ?? 0} قطع",
-                                    style: AppDesign.captionStyle.copyWith(
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                // ==================================================
+                // عدد القطع
+                // ==================================================
+                TextField(
+                  controller: _itemCountController,
+                  keyboardType: TextInputType.number,
+                  enabled: !inputsLocked,
+                  onChanged: inputsLocked ? null : _updateItemCount,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: InputDecoration(
+                    labelText: "إجمالي عدد القطع",
+                    errorText: itemCountError,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ],
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.blue),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.red),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.red),
+                    ),
+                  ),
                 ),
 
-              // ==================================================
-              // داخل الصندوق
-              // ==================================================
-              if (openedBox != null)
-                Column(
-                  children: [
-                    Row(
-                      children: [
-                        TextButton.icon(
-                          onPressed: _saving
-                              ? null
-                              : () {
-                                  setState(() {
-                                    openedBox = null;
-                                  });
-                                },
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text("رجوع"),
-                        ),
-                      ],
-                    ),
+                AppGap.lg,
 
-                    AppGap.sm,
+                // ==================================================
+                // الصناديق
+                // ==================================================
+                if (totalBoxes > 0 && openedBox == null)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "اختر صندوق للعمل عليه:",
+                        style: AppDesign.subtitleStyle,
+                      ),
 
-                    ...boxes[openedBox!]!.asMap().entries.map((entry) {
-                      int idx = entry.key;
+                      AppGap.sm,
 
-                      var item = entry.value;
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: totalBoxes,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 3,
+                              mainAxisSpacing: 10,
+                              crossAxisSpacing: 10,
+                            ),
+                        itemBuilder: (context, idx) {
+                          int boxNum = idx + 1;
 
-                      return Card(
-                        child: Padding(
-                          padding: AppPadding.card,
-                          child: Column(
-                            children: [
-                              Text(
-                                "القطعة رقم ${idx + 1}",
-                                style: AppDesign.bodyStyle,
+                          bool isSaved = savedBoxes.contains(boxNum);
+
+                          return GestureDetector(
+                            onTap: () {
+                              if (!canOpenBox()) {
+                                AppDesign.showErrorSnackBar(
+                                  context,
+                                  "يرجى إكمال جميع الحقول",
+                                );
+
+                                return;
+                              }
+
+                              if (!isSaved) {
+                                setState(() {
+                                  openedBox = boxNum;
+
+                                  inputsLocked = true;
+                                });
+                              }
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(
+                                  AppDesign.radiusLG,
+                                ),
+                                gradient: LinearGradient(
+                                  colors: isSaved
+                                      ? [AppDesign.success, AppDesign.primary]
+                                      : [
+                                          AppDesign.softGreen.withOpacity(0.2),
+                                          AppDesign.softGreen,
+                                        ],
+                                ),
                               ),
-
-                              AppGap.sm,
-
-                              Row(
-                                children: [
-                                  // ==================================================
-                                  // الصورة
-                                  // ==================================================
-                                  GestureDetector(
-                                    onTap: _saving
-                                        ? null
-                                        : () => _pickItemImage(openedBox!, idx),
-                                    child: Container(
-                                      height: 90,
-                                      width: 90,
-                                      decoration: BoxDecoration(
-                                        color: AppDesign.surfaceAlt,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: AppDesign.border,
-                                        ),
-                                      ),
-                                      child: item['image'] == null
-                                          ? Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Icon(
-                                                  Icons.add_a_photo_outlined,
-                                                  color: AppDesign.primary,
-                                                  size: 28,
-                                                ),
-                                                const SizedBox(height: 5),
-                                                Text(
-                                                  "إضافة صورة",
-                                                  style: AppDesign.captionStyle,
-                                                ),
-                                              ],
-                                            )
-                                          : ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              child: Image.memory(
-                                                item['image'],
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      isSaved
+                                          ? Icons.check_circle
+                                          : Icons.inventory_2,
+                                      color: Colors.white,
+                                      size: 30,
                                     ),
-                                  ),
 
-                                  AppGap.wMD,
+                                    AppGap.xs,
 
-                                  // ==================================================
-                                  // نوع القطعة
-                                  // ==================================================
-                                  Expanded(
-                                    child: Column(
-                                      children: [
-                                        DropdownButton<String>(
-                                          hint: const Text("نوع القطعة"),
-                                          value: item['type'],
-                                          isExpanded: true,
-                                          items:
-                                              [
-                                                    "قميص",
-                                                    "تيشيرت",
-                                                    "كنزة",
-                                                    "بنطلون",
-                                                    "تنورة",
-                                                    "فستان",
-                                                    "جاكيت",
-                                                    "معطف",
-                                                    "ثوب",
-                                                    "شماغ",
-                                                    "عباية",
-                                                    "حذاء",
-                                                    "حقيبة",
-                                                    "قبعة",
-                                                    "شال",
-                                                    "نظارة",
-                                                    "ساعة",
-                                                    "حزام",
-                                                    "قفازات",
-                                                  ]
-                                                  .map(
-                                                    (e) => DropdownMenuItem(
-                                                      value: e,
-                                                      child: Text(e),
-                                                    ),
-                                                  )
-                                                  .toList(),
-                                          onChanged: (v) {
-                                            setState(() {
-                                              boxes[openedBox!]?[idx]['type'] =
-                                                  v;
+                                    Text(
+                                      "صندوق $boxNum",
+                                      style: AppDesign.subtitleStyle.copyWith(
+                                        color: Colors.white,
+                                      ),
+                                    ),
 
-                                              boxes[openedBox!]?[idx]['size'] =
-                                                  null;
-                                            });
-                                          },
+                                    Text(
+                                      "${boxes[boxNum]?.length ?? 0} قطع",
+                                      style: AppDesign.captionStyle.copyWith(
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+
+                // ==================================================
+                // داخل الصندوق
+                // ==================================================
+                if (openedBox != null)
+                  Column(
+                    children: [
+                      Row(
+                        children: [
+                          TextButton.icon(
+                            onPressed: _saving
+                                ? null
+                                : () {
+                                    setState(() {
+                                      openedBox = null;
+                                    });
+                                  },
+                            icon: const Icon(Icons.arrow_back),
+                            label: const Text("رجوع"),
+                          ),
+                        ],
+                      ),
+
+                      AppGap.sm,
+
+                      ...boxes[openedBox!]!.asMap().entries.map((entry) {
+                        int idx = entry.key;
+
+                        var item = entry.value;
+
+                        return Card(
+                          child: Padding(
+                            padding: AppPadding.card,
+                            child: Column(
+                              children: [
+                                Text(
+                                  "القطعة رقم ${idx + 1}",
+                                  style: AppDesign.bodyStyle,
+                                ),
+
+                                AppGap.sm,
+
+                                Row(
+                                  children: [
+                                    // ==================================================
+                                    // الصورة
+                                    // ==================================================
+                                    GestureDetector(
+                                      onTap: _saving
+                                          ? null
+                                          : () =>
+                                                _pickItemImage(openedBox!, idx),
+                                      child: Container(
+                                        height: 90,
+                                        width: 90,
+                                        decoration: BoxDecoration(
+                                          color: AppDesign.surfaceAlt,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: AppDesign.border,
+                                          ),
                                         ),
+                                        child: item['image'] == null
+                                            ? Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.add_a_photo_outlined,
+                                                    color: AppDesign.primary,
+                                                    size: 28,
+                                                  ),
+                                                  const SizedBox(height: 5),
+                                                  Text(
+                                                    "إضافة صورة",
+                                                    style:
+                                                        AppDesign.captionStyle,
+                                                  ),
+                                                ],
+                                              )
+                                            : ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                child: Image.memory(
+                                                  item['image'],
+                                                  fit: BoxFit.cover,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
 
-                                        // ==================================================
-                                        // مقاس الحذاء
-                                        // ==================================================
-                                        if (item['type'] == "حذاء")
+                                    AppGap.wMD,
+
+                                    // ==================================================
+                                    // نوع القطعة
+                                    // ==================================================
+                                    Expanded(
+                                      child: Column(
+                                        children: [
                                           DropdownButton<String>(
-                                            hint: const Text("مقاس الحذاء"),
-                                            value: item['size'],
+                                            hint: const Text("نوع القطعة"),
+                                            value: item['type'],
                                             isExpanded: true,
                                             items:
-                                                List.generate(
-                                                      28,
-                                                      (i) =>
-                                                          (20 + i).toString(),
-                                                    )
+                                                [
+                                                      "قميص",
+                                                      "تيشيرت",
+                                                      "كنزة",
+                                                      "بنطلون",
+                                                      "تنورة",
+                                                      "فستان",
+                                                      "جاكيت",
+                                                      "معطف",
+                                                      "ثوب",
+                                                      "شماغ",
+                                                      "عباية",
+                                                      "حذاء",
+                                                      "حقيبة",
+                                                      "قبعة",
+                                                      "شال",
+                                                      "نظارة",
+                                                      "ساعة",
+                                                      "حزام",
+                                                      "قفازات",
+                                                    ]
                                                     .map(
                                                       (e) => DropdownMenuItem(
                                                         value: e,
@@ -1282,102 +1350,138 @@ If it is valid, answer only with JSON (no extra text) in this format:
                                                     .toList(),
                                             onChanged: (v) {
                                               setState(() {
-                                                boxes[openedBox!]?[idx]['size'] =
+                                                boxes[openedBox!]?[idx]['type'] =
                                                     v;
+
+                                                boxes[openedBox!]?[idx]['size'] =
+                                                    null;
                                               });
                                             },
                                           ),
-                                      ],
+
+                                          // ==================================================
+                                          // مقاس الحذاء
+                                          // ==================================================
+                                          if (item['type'] == "حذاء")
+                                            DropdownButton<String>(
+                                              hint: const Text("مقاس الحذاء"),
+                                              value: item['size'],
+                                              isExpanded: true,
+                                              items:
+                                                  List.generate(
+                                                        28,
+                                                        (i) =>
+                                                            (20 + i).toString(),
+                                                      )
+                                                      .map(
+                                                        (e) => DropdownMenuItem(
+                                                          value: e,
+                                                          child: Text(e),
+                                                        ),
+                                                      )
+                                                      .toList(),
+                                              onChanged: (v) {
+                                                setState(() {
+                                                  boxes[openedBox!]?[idx]['size'] =
+                                                      v;
+                                                });
+                                              },
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                if (item['error'] != null)
+                                  Text(
+                                    item['error'],
+                                    style: AppDesign.captionStyle.copyWith(
+                                      color: AppDesign.error,
                                     ),
                                   ),
-                                ],
-                              ),
-
-                              if (item['error'] != null)
-                                Text(
-                                  item['error'],
-                                  style: AppDesign.captionStyle.copyWith(
-                                    color: AppDesign.error,
-                                  ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    }),
+                        );
+                      }),
 
-                    AppGap.lg,
+                      AppGap.lg,
 
-                    // ==================================================
-                    // حفظ الصندوق (معطّل لين تكتمل كل البيانات أو أثناء الحفظ)
-                    // ==================================================
-                    ElevatedButton(
-                      onPressed: (!_saving && validateBoxBeforeSave(openedBox!))
-                          ? () async {
-                              await _submitBox(openedBox!);
-                            }
-                          : null,
-                      child: _saving
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text("حفظ الصندوق"),
-                    ),
-                  ],
-                ),
+                      // ==================================================
+                      // حفظ الصندوق (معطّل لين تكتمل كل البيانات أو أثناء الحفظ)
+                      // ==================================================
+                      ElevatedButton(
+                        onPressed:
+                            (!_saving && validateBoxBeforeSave(openedBox!))
+                            ? () async {
+                                await _submitBox(openedBox!);
+                              }
+                            : null,
+                        child: _saving
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text("حفظ الصندوق"),
+                      ),
+                    ],
+                  ),
 
-              AppGap.lg,
+                AppGap.lg,
 
-              // ==================================================
-              // تم
-              // ==================================================
-              ElevatedButton(
-                onPressed: (totalBoxes > 0 && allBoxesSaved() && !_saving)
-                    ? () async {
-                        try {
-                          final user = FirebaseAuth.instance.currentUser;
+                // ==================================================
+                // تم
+                // ==================================================
+                ElevatedButton(
+                  onPressed: (totalBoxes > 0 && allBoxesSaved() && !_saving)
+                      ? () async {
+                          try {
+                            final user = FirebaseAuth.instance.currentUser;
 
-                          await FirebaseFirestore.instance
-                              .collection('donations')
-                              .doc(donationId ?? user!.uid)
-                              .update({
-                                'donorId': user!.uid,
-                                'gender': selectedGender ?? "",
-                                'ageGroup': selectedAgeGroup?['label'] ?? "",
-                                'generalSize': generalSize ?? "",
-                                'numberOfItems': totalItems,
-                                'updatedAt': FieldValue.serverTimestamp(),
-                                'status': 'draft',
-                              });
+                            await FirebaseFirestore.instance
+                                .collection('donations')
+                                .doc(donationId ?? user!.uid)
+                                .update({
+                                  'donorId': user!.uid,
+                                  'gender': selectedGender ?? "",
+                                  'ageGroup': selectedAgeGroup?['label'] ?? "",
+                                  'generalSize': generalSize ?? "",
+                                  'numberOfItems': totalItems,
+                                  'updatedAt': FieldValue.serverTimestamp(),
+                                  'status': 'draft',
+                                });
 
-                          AppDesign.showSuccessSnackBar(
-                            context,
-                            "تم حفظ التبرع بنجاح",
-                          );
+                            AppDesign.showSuccessSnackBar(
+                              context,
+                              "تم حفظ التبرع بنجاح",
+                            );
 
-                          await Future.delayed(const Duration(seconds: 1));
+                            await Future.delayed(const Duration(seconds: 1));
 
-                          if (!mounted) return;
+                            if (!mounted) return;
 
-                          Navigator.pushNamedAndRemoveUntil(
-                            context,
-                            '/donorHome',
-                            (route) => false,
-                            arguments: user.uid,
-                          );
-                        } catch (e) {
-                          AppDesign.showErrorSnackBar(
-                            context,
-                            "حدث خطأ أثناء الإرسال",
-                          );
+                            Navigator.pushNamedAndRemoveUntil(
+                              context,
+                              '/donorHome',
+                              (route) => false,
+                              arguments: user.uid,
+                            );
+                          } catch (e) {
+                            AppDesign.showErrorSnackBar(
+                              context,
+                              "حدث خطأ أثناء الإرسال",
+                            );
+                          }
                         }
-                      }
-                    : null,
-                child: const Text("تم"),
-              ),
-            ],
+                      : null,
+                  child: const Text("تم"),
+                ),
+              ],
+            ),
           ),
         ),
       ),
