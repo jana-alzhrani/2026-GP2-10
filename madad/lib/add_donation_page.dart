@@ -61,47 +61,9 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
   String? generalSize;
 
-  // ============================================================
-  // Controllers حقول وصف القطع
-  // ============================================================
-
-  final Map<String, TextEditingController> _descControllers = {};
-
-  TextEditingController _descCtrl(int box, int idx) {
-    return _descControllers.putIfAbsent(
-      '${box}_$idx',
-      () => TextEditingController(text: boxes[box]![idx]['description'] ?? ''),
-    );
-  }
-
-  void _disposeDescController(String key) {
-    final ctrl = _descControllers.remove(key);
-    if (ctrl == null) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ctrl.dispose();
-    });
-  }
-
-  void _clearDescControllers(int box) {
-    final keys = _descControllers.keys
-        .where((k) => k.startsWith('${box}_'))
-        .toList();
-
-    for (final k in keys) {
-      _disposeDescController(k);
-    }
-  }
-
   @override
   void dispose() {
     _itemCountController.dispose();
-
-    for (final c in _descControllers.values) {
-      c.dispose();
-    }
-    _descControllers.clear();
-
     super.dispose();
   }
 
@@ -110,23 +72,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
     return selectedAgeGroup!['label'] == 'بالغون';
   }
-
-  bool needsSize(String? type) {
-    return [
-      "قميص",
-      "تيشيرت",
-      "كنزة",
-      "بنطلون",
-      "تنورة",
-      "فستان",
-      "جاكيت",
-      "معطف",
-      "ثوب",
-      "عباية",
-    ].contains(type);
-  }
-
-  bool isShoe(String? type) => type == "حذاء";
 
   Map<String, String> typeMap = {
     "shirt": "قميص",
@@ -254,23 +199,12 @@ class _AddDonationPageState extends State<AddDonationPage> {
                   AppGap.md,
 
                   // العنوان
-                  Row(
-                    children: [
-                      AppGap.wMD,
-
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(height: 4),
-                            Text(
-                              "اختار طريقة إضافة صورة القطعة",
-                              style: TextStyle(fontSize: 13),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      "اختار طريقة إضافة صورة القطعة",
+                      style: TextStyle(fontSize: 13),
+                    ),
                   ),
 
                   AppGap.lg,
@@ -712,7 +646,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
     donationId = doc.id;
 
-    print("NEW donationId => $donationId");
+    debugPrint("NEW donationId => $donationId");
   }
 
   // ============================================================
@@ -863,8 +797,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
             'error': null,
           },
         );
-
-        _clearDescControllers(box);
 
         savedBoxes.add(box);
 
