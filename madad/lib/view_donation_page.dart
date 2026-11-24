@@ -1681,7 +1681,7 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Text(
-                  'وجّه الكاميرا نحو باركود الصندوق أو التبرع لتأكيد التسليم',
+                  'وجّه الكاميرا نحو الباركود لتأكيد التسليم',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white, fontSize: 14),
                 ),
