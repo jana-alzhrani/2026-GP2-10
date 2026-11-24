@@ -1,0 +1,8 @@
+V4 vs V2 on the same 1,918 FITB questions and 2,000 ranking queries (16 types, seed 42)
+FITB: +0.0224, McNemar test p = 0.0488 (significant at 0.05)
+MRR : +0.0244, Wilcoxon signed-rank test p < 0.001
+AUC : -0.0062, bootstrap p = 0.002 (V2 slightly better at pair classification)
+Random baselines: FITB 0.25, HR@10 0.1012, MRR 0.0523
+App formula vs trained model: 80 rankings, same top-10 order 80/80, max score difference 2.38e-07
+Recommendation service vs notebook embedding: cosine 0.999999
+Leakage: 0 shared products train/test; 6 of 8,785 test items (0.07%) with an identical image in train
