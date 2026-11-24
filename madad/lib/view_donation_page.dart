@@ -1084,6 +1084,38 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                     }),
 
                     AppGap.md,
+ Align(
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          const Icon(
+                            Icons.info_outline,
+                            size: 18,
+                            color: AppDesign.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'الملصقات ترفق مع كل صندوق',
+                              textAlign: TextAlign.center,
+                              textHeightBehavior: const TextHeightBehavior(
+                                applyHeightToFirstAscent: false,
+                                applyHeightToLastDescent: false,
+                              ),
+                              style: AppDesign.captionStyle.copyWith(
+                                height: 0.2,
+                                color: AppDesign.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
