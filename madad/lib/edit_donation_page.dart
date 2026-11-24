@@ -44,7 +44,10 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
   final TextEditingController _itemCountController = TextEditingController();
 
-  final String _apiKey = '';
+  static const String _apiKey = '';
+  static const String _geminiUrl =
+      'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent';
+
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
   int totalItems = 0;
@@ -88,28 +91,8 @@ class _EditDonationPageState extends State<EditDonationPage> {
     "gloves": "قفازات",
   };
 
-  // ============================================================
-  // Controllers حقول وصف القطع
-  // ============================================================
-
-  final Map<String, TextEditingController> _descControllers = {};
-
-  // نتخلص من الـ controller بعد انتهاء الفريم (عشان ما نعمل dispose
-  // وهو لسا مربوط بـ TextField)
-  void _disposeDescController(String key) {
-    final ctrl = _descControllers.remove(key);
-    if (ctrl == null) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ctrl.dispose();
-    });
-  }
-
-  void _clearAllDescControllers() {
-    for (final k in _descControllers.keys.toList()) {
-      _disposeDescController(k);
-    }
-  }
+  late final List<String> _typeOptions = typeMap.values.toList();
+  final List<String> _shoeSizes = List.generate(28, (i) => (20 + i).toString());
 
   // ============================================================
 
@@ -170,6 +153,8 @@ class _EditDonationPageState extends State<EditDonationPage> {
         : widget.initialItemCount.toString();
 
     if (widget.initialBoxes != null && widget.initialBoxes!.isNotEmpty) {
+      final Set<String> paths = {};
+
       boxes = Map<int, List<Map<String, dynamic>>>.from(
         widget.initialBoxes!.map(
           (key, value) => MapEntry(
@@ -177,38 +162,53 @@ class _EditDonationPageState extends State<EditDonationPage> {
             value.map((item) {
               final m = Map<String, dynamic>.from(item);
               m['description'] = (m['description'] ?? '').toString();
+              m['isValid'] =
+                  m['isValid'] == true ||
+                  (m['imageUrl'] ?? '').toString().isNotEmpty;
+              m['needsEmbed'] = false;
+
+              // نحتاج مسارات الصور الأصلية عشان نحذف غير المستخدم من Storage
+              final p = (m['imagePath'] ?? '').toString();
+              if (p.isNotEmpty) paths.add(p);
+
               return m;
             }).toList(),
           ),
         ),
       );
 
+      _originalImagePaths = paths;
       totalBoxes = boxes.length;
       savedBoxes = boxes.keys.toSet();
       isLoadingBoxes = false;
+
+      // المقاس العام ما يجي من الـ widget، نجيبه من التبرع نفسه
+      _loadGeneralSize();
     } else {
       _loadDonationBoxes();
     }
   }
 
-  Future<Uint8List?> _downloadImage(String? url) async {
-    if (url == null || url.isEmpty) return null;
-
+  Future<void> _loadGeneralSize() async {
     try {
-      final response = await http.get(Uri.parse(url));
+      final snap = await firestore
+          .collection('donations')
+          .doc(widget.donationId)
+          .get();
 
-      if (response.statusCode == 200) {
-        return response.bodyBytes;
+      final gs = (snap.data()?['generalSize'] ?? '').toString();
+
+      if (gs.isNotEmpty && mounted && generalSize == null) {
+        setState(() => generalSize = gs);
       }
     } catch (e) {
-      debugPrint('Image load error: $e');
+      debugPrint('General size load error: $e');
     }
-
-    return null;
   }
 
   // ============================================================
   // تحميل الصناديق + القطع (من كولكشن items)
+  // الصور تنعرض بـ Image.network، فما نحملها بالذاكرة
   // ============================================================
 
   Future<void> _loadDonationBoxes() async {
@@ -240,7 +240,7 @@ class _EditDonationPageState extends State<EditDonationPage> {
       for (final doc in boxesSnap.docs) {
         final data = doc.data();
 
-        final int boxNumber = (data['boxNumber'] ?? 0) as int;
+        final int boxNumber = (data['boxNumber'] as num?)?.toInt() ?? 0;
 
         // القطع من كولكشن items، ولو الصندوق قديم نقرأ من الـ array
         List<Map<String, dynamic>> rawItems = [...(itemsByBox[doc.id] ?? [])];
@@ -264,28 +264,23 @@ class _EditDonationPageState extends State<EditDonationPage> {
           loadedGeneralSize = gs;
         }
 
-        // تحميل الصور بالتوازي
-        final images = await Future.wait(
-          rawItems.map((m) => _downloadImage(m['imageUrl']?.toString())),
-        );
-
         loadedBoxes[boxNumber] = [];
 
-        for (int i = 0; i < rawItems.length; i++) {
-          final map = rawItems[i];
+        for (final map in rawItems) {
           final imageUrl = (map['imageUrl'] ?? '').toString();
           final imagePath = (map['imagePath'] ?? '').toString();
 
           if (imagePath.isNotEmpty) loadedPaths.add(imagePath);
 
           loadedBoxes[boxNumber]!.add({
-            'image': images[i],
+            'image': null,
             'imageUrl': imageUrl.isEmpty ? null : imageUrl,
             'imagePath': imagePath,
             'type': map['type'],
             'size': map['size'],
             'description': (map['description'] ?? '').toString(),
-            'isValid': imageUrl.isNotEmpty || images[i] != null,
+            'isValid': imageUrl.isNotEmpty,
+            'needsEmbed': false,
             'error': null,
           });
         }
@@ -339,53 +334,72 @@ class _EditDonationPageState extends State<EditDonationPage> {
       'size': null,
       'description': '',
       'isValid': false,
+      'needsEmbed': false,
       'error': null,
     };
   }
 
-  void _updateItemCount(String value) {
-    setState(() {
-      itemCountError = null;
-      changesSaved = false;
-    });
+  // يتطبق لما يطلع المستخدم من الحقل (أو يضغط تم)، مو مع كل حرف،
+  // وإذا بيقلّل العدد يسأل قبل حذف القطع.
+  Future<void> _updateItemCount(String value) async {
+    setState(() => itemCountError = null);
 
-    if (value.isEmpty) {
-      _clearAllDescControllers();
+    final trimmed = value.trim();
+    int newCount;
 
+    if (trimmed.isEmpty) {
+      newCount = 0;
+    } else {
+      final parsed = int.tryParse(trimmed);
+
+      if (parsed == null) {
+        setState(() => itemCountError = "الرجاء إدخال أرقام فقط");
+        return;
+      }
+
+      if (parsed > 100) {
+        setState(() => itemCountError = "الحد الأقصى 100 قطعة");
+        return;
+      }
+
+      if (parsed <= 0) {
+        setState(() => itemCountError = "أدخل عددًا أكبر من صفر");
+        return;
+      }
+
+      newCount = parsed;
+    }
+
+    if (newCount == totalItems) return;
+
+    if (newCount < totalItems) {
+      final ok = await AppDesign.showAppDialog(
+        context: context,
+        title: 'تقليل عدد القطع',
+        message: 'سيتم حذف القطع الزائدة من آخر الصناديق، هل تريد المتابعة؟',
+      );
+
+      if (!mounted) return;
+
+      if (!ok) {
+        _itemCountController.text = totalItems == 0
+            ? ''
+            : totalItems.toString();
+        return;
+      }
+    }
+
+    if (newCount == 0) {
       setState(() {
         totalItems = 0;
         totalBoxes = 0;
         boxes = {};
         savedBoxes.clear();
         openedBox = null;
+        changesSaved = false;
       });
       return;
     }
-
-    final parsed = int.tryParse(value);
-
-    if (parsed == null) {
-      setState(() {
-        itemCountError = "الرجاء إدخال أرقام فقط";
-      });
-      return;
-    }
-
-    if (parsed > 100) {
-      _clearAllDescControllers();
-
-      setState(() {
-        itemCountError = "الحد الأقصى 100 قطعة";
-        totalItems = 0;
-        totalBoxes = 0;
-        boxes = {};
-        savedBoxes.clear();
-        openedBox = null;
-      });
-      return;
-    }
-
-    if (parsed <= 0) return;
 
     final oldBoxes = boxes.map(
       (key, value) => MapEntry(
@@ -394,11 +408,11 @@ class _EditDonationPageState extends State<EditDonationPage> {
       ),
     );
 
-    final newTotalItems = parsed;
-    final newTotalBoxes = (newTotalItems / 5).ceil();
+    final newTotalBoxes = (newCount / 5).ceil();
 
     final Map<int, List<Map<String, dynamic>>> newBoxes = {};
-    int remainingItems = newTotalItems;
+    final Set<int> newSaved = Set<int>.from(savedBoxes);
+    int remainingItems = newCount;
 
     for (int i = 1; i <= newTotalBoxes; i++) {
       final itemsInThisBox = remainingItems >= 5 ? 5 : remainingItems;
@@ -406,6 +420,9 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
       if (existing.length >= itemsInThisBox) {
         newBoxes[i] = existing.take(itemsInThisBox).toList();
+
+        // الصندوق انقص منه قطع، فنطلب حفظه من جديد
+        if (existing.length > itemsInThisBox) newSaved.remove(i);
       } else {
         final extraItems = List.generate(
           itemsInThisBox - existing.length,
@@ -414,22 +431,22 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
         newBoxes[i] = [...existing, ...extraItems];
 
-        // مهم جدًا: الصندوق صار غير محفوظ لأن فيه قطع جديدة
-        savedBoxes.remove(i);
+        // الصندوق صار غير محفوظ لأن فيه قطع جديدة
+        newSaved.remove(i);
       }
 
       remainingItems -= itemsInThisBox;
     }
 
-    // الـ controllers ترجع تنبني من القيم الموجودة في boxes
-    _clearAllDescControllers();
+    newSaved.removeWhere((boxNumber) => boxNumber > newTotalBoxes);
 
     setState(() {
-      totalItems = newTotalItems;
+      totalItems = newCount;
       totalBoxes = newTotalBoxes;
       boxes = newBoxes;
-      savedBoxes.removeWhere((boxNumber) => boxNumber > totalBoxes);
+      savedBoxes = newSaved;
       openedBox = null;
+      changesSaved = false;
     });
   }
 
@@ -552,7 +569,7 @@ class _EditDonationPageState extends State<EditDonationPage> {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: AppDesign.softGreen.withOpacity(0.2),
+                color: AppDesign.softGreen.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(15),
               ),
               child: Icon(icon, color: AppDesign.primary, size: 27),
@@ -588,6 +605,9 @@ class _EditDonationPageState extends State<EditDonationPage> {
       return;
     }
 
+    // أثناء فحص صورة ثانية لا نسمح بتغيير نفس القطعة
+    if (boxes[box]![index]['error'] == "جاري الفحص...") return;
+
     final source = await _showImageSourceBottomSheet();
     if (source == null || !mounted) return;
 
@@ -603,8 +623,12 @@ class _EditDonationPageState extends State<EditDonationPage> {
       final Uint8List bytes = await image.readAsBytes();
       if (!mounted) return;
 
+      // نحتفظ بنسخة من القطعة الأصلية عشان نرجعها لو الصورة الجديدة انرفضت
+      final Map<String, dynamic> previous = Map<String, dynamic>.from(
+        boxes[box]![index],
+      );
+
       setState(() {
-        // نلغي رابط الصورة القديمة فقط بعد اختيار صورة جديدة بالفعل.
         boxes[box]![index]['image'] = bytes;
         boxes[box]![index]['imageUrl'] = null;
         boxes[box]![index]['imagePath'] = '';
@@ -613,12 +637,28 @@ class _EditDonationPageState extends State<EditDonationPage> {
         boxes[box]![index]['type'] = null;
         boxes[box]![index]['size'] = null;
         boxes[box]![index]['description'] = '';
-        _disposeDescController('${box}_$index');
         savedBoxes.remove(box);
         changesSaved = false;
       });
 
-      await _verifyImageWithGemini(box, index, bytes, image.mimeType);
+      final bool ok = await _verifyImageWithGemini(
+        box,
+        index,
+        bytes,
+        image.mimeType,
+      );
+
+      if (!mounted) return;
+
+      if (!ok) {
+        final stillThere = boxes.containsKey(box) && index < boxes[box]!.length;
+
+        if (stillThere) {
+          setState(() {
+            boxes[box]![index] = previous;
+          });
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       AppDesign.showErrorSnackBar(context, "تعذر اختيار الصورة");
@@ -673,32 +713,41 @@ class _EditDonationPageState extends State<EditDonationPage> {
     return fallback ?? 'image/jpeg';
   }
 
-  Future<void> _verifyImageWithGemini(
+  /// يرجع true لو الصورة صالحة (ويعبّي النوع والوصف)،
+  /// وfalse لو انرفضت أو فشل الفحص. الاستعادة تتم عند المستدعي.
+  Future<bool> _verifyImageWithGemini(
     int box,
     int index,
     Uint8List imageBytes,
     String? mimeType,
   ) async {
-    if (!mounted) return;
+    if (!mounted) return false;
+
+    if (_apiKey.isEmpty) {
+      AppDesign.showErrorSnackBar(context, 'خدمة فحص الصور غير مفعّلة');
+      return false;
+    }
 
     setState(() {
       boxes[box]![index]['error'] = "جاري الفحص...";
     });
 
-    final String url =
-        'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$_apiKey';
     try {
       final String base64Image = base64Encode(imageBytes);
 
-      final response = await http.post(
-        Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "contents": [
-            {
-              "parts": [
+      final response = await http
+          .post(
+            Uri.parse(_geminiUrl),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': _apiKey,
+            },
+            body: jsonEncode({
+              "contents": [
                 {
-                  "text": """
+                  "parts": [
+                    {
+                      "text": """
 Check the image.
 
 Type notes (group similar items, do not split): Shirt = button or collared top (shirt, blouse, polo); T-Shirt = t-shirt, tank top or simple jersey top; Sweater = warm top (sweater, hoodie, cardigan, sweatshirt); Pants = any bottoms (pants, jeans, shorts, leggings); Dress = dress, jalabiya, jumpsuit, romper or baby onesie; Jacket = light jacket, blazer or vest; Coat = heavy winter coat; Thobe = Saudi/Gulf men's long robe (also bisht); Shemagh = men's Gulf head cloth (shemagh/ghutra); Abaya = women's long cloak (a tarha/hijab/headscarf also counts as Abaya); Sleepwear = use the closest type (T-Shirt or Pants); Shawl = shawl or neck/winter scarf (not a hijab); Glasses = sunglasses or eyeglasses; Watch = wrist watch; Belt = belt; Gloves = gloves or mittens; Bag = any bag (handbag, backpack, school bag, clutch, tote, crossbody, wallet); Skirt = skirt; Hat = hat or cap; Shoe = any footwear (shoes, sandals, slippers, boots).
@@ -718,94 +767,95 @@ If it is valid, answer only with JSON (no extra text) in this format:
   "shortDescription": "short English product title like an online fashion store, 3-10 words: color + material/pattern + style + item (e.g. 'Light blue cotton long sleeve button shirt')"
 }
 """,
-                },
-
-                {
-                  "inline_data": {
-                    "mime_type": _detectMime(imageBytes, mimeType),
-                    "data": base64Image,
-                  },
+                    },
+                    {
+                      "inline_data": {
+                        "mime_type": _detectMime(imageBytes, mimeType),
+                        "data": base64Image,
+                      },
+                    },
+                  ],
                 },
               ],
-            },
-          ],
-        }),
-      );
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final String result =
-            data['candidates'][0]['content']['parts'][0]['text'];
-
-        debugPrint('Gemini response: $result');
-
-        final geminiJson = _parseGeminiJson(result);
-
-        // لو الرد مو JSON نرجع للصيغة القديمة (Yes - Type)
-        // صالحة = Gemini قال valid + النوع من أنواعنا (أي شيء ثاني يُرفض)
-        final bool isValid = geminiJson != null
-            ? geminiJson['valid'] == true &&
-                  typeMap.containsKey(
-                    (geminiJson['type'] ?? '').toString().trim().toLowerCase(),
-                  )
-            : result.trim().toLowerCase().startsWith("yes");
-
-        setState(() {
-          final cleaned = result.trim().toLowerCase();
-
-          if (isValid) {
-            String? detectedType;
-
-            if (geminiJson != null) {
-              detectedType =
-                  typeMap[(geminiJson['type'] ?? '')
-                      .toString()
-                      .trim()
-                      .toLowerCase()];
-            } else if (cleaned.contains("-")) {
-              final typeEng = cleaned.split("-")[1].trim();
-              detectedType = typeMap[typeEng];
-            }
-
-            // الوصف القصير (للموديل، ما يظهر للمتبرع)
-            boxes[box]![index]['description'] =
-                (geminiJson?['shortDescription'] ?? '').toString().trim();
-
-            boxes[box]![index]['isValid'] = true;
-            boxes[box]![index]['error'] = null;
-
-            if (detectedType != null) {
-              boxes[box]![index]['type'] = detectedType;
-              boxes[box]![index]['size'] = null;
-            }
-
-            AppDesign.showImageValidSnackBar(context, "الصورة صالحة");
-          } else {
-            boxes[box]![index]['image'] = null;
-            boxes[box]![index]['type'] = null;
-            boxes[box]![index]['size'] = null;
-            boxes[box]![index]['description'] = '';
-            boxes[box]![index]['isValid'] = false;
-            boxes[box]![index]['error'] = null;
-
-            _disposeDescController('${box}_$index');
-
-            AppDesign.showImageInvalidSnackBar(context, "الصورة غير صالحة!");
-          }
-        });
-      } else {
-        setState(() {
-          boxes[box]![index]['error'] = "فشل الفحص: ${response.statusCode}";
-        });
+      if (response.statusCode != 200) {
+        debugPrint('Gemini status: ${response.statusCode}');
+        AppDesign.showErrorSnackBar(
+          context,
+          'تعذر فحص الصورة (${response.statusCode})، حاول مرة أخرى',
+        );
+        return false;
       }
-    } catch (e) {
-      if (!mounted) return;
+
+      final data = jsonDecode(response.body);
+      final candidates = data['candidates'];
+
+      if (candidates is! List || candidates.isEmpty) {
+        AppDesign.showErrorSnackBar(context, 'تعذر فحص الصورة، حاول مرة أخرى');
+        return false;
+      }
+
+      final String result =
+          (candidates[0]['content']?['parts']?[0]?['text'] ?? '').toString();
+
+      debugPrint('Gemini response: $result');
+
+      final geminiJson = _parseGeminiJson(result);
+
+      // لو الرد مو JSON نرجع للصيغة القديمة (Yes - Type)
+      // صالحة = Gemini قال valid + النوع من أنواعنا (أي شيء ثاني يُرفض)
+      final bool isValid = geminiJson != null
+          ? geminiJson['valid'] == true &&
+                typeMap.containsKey(
+                  (geminiJson['type'] ?? '').toString().trim().toLowerCase(),
+                )
+          : result.trim().toLowerCase().startsWith("yes");
+
+      if (!isValid) {
+        AppDesign.showImageInvalidSnackBar(context, "الصورة غير صالحة!");
+        return false;
+      }
+
+      String? detectedType;
+
+      if (geminiJson != null) {
+        detectedType =
+            typeMap[(geminiJson['type'] ?? '').toString().trim().toLowerCase()];
+      } else {
+        final cleaned = result.trim().toLowerCase();
+        if (cleaned.contains("-")) {
+          detectedType = typeMap[cleaned.split("-")[1].trim()];
+        }
+      }
 
       setState(() {
-        boxes[box]![index]['error'] = "فشل الفحص: $e";
+        // الوصف القصير (للموديل، ما يظهر للمتبرع)
+        boxes[box]![index]['description'] =
+            (geminiJson?['shortDescription'] ?? '').toString().trim();
+
+        boxes[box]![index]['isValid'] = true;
+        boxes[box]![index]['error'] = null;
+        boxes[box]![index]['needsEmbed'] = true;
+
+        if (detectedType != null) {
+          boxes[box]![index]['type'] = detectedType;
+          boxes[box]![index]['size'] = null;
+        }
       });
+
+      AppDesign.showImageValidSnackBar(context, "الصورة صالحة");
+      return true;
+    } catch (e) {
+      debugPrint('Gemini error: $e');
+      if (!mounted) return false;
+
+      AppDesign.showErrorSnackBar(context, 'تعذر فحص الصورة، حاول مرة أخرى');
+      return false;
     }
   }
 
@@ -865,7 +915,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
       message: 'هل أنت متأكد من حفظ هذا الصندوق؟',
     );
 
-    if (!confirm) return;
+    if (!confirm || !mounted || openedBox == null) return;
 
     setState(() {
       savedBoxes.add(openedBox!);
@@ -875,7 +925,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
   // ============================================================
   // حفظ التغييرات
-  // الصناديق في donation_boxes والقطع في items (كل قطعة دوكمنت)
+  // - نحدّث الدوكمنتات الموجودة بنفس الـ ID (حسب رقم الصندوق/القطعة)
+  //   بدل حذف الكل وإعادة إنشائه، عشان ما تنكسر المراجع (سلة، طلبات...)
+  // - نحافظ على status الحالي للتبرع والقطع
+  // - لو فشل الحفظ نحذف الصور اللي انرفعت للتو
   // ============================================================
 
   Future<void> _saveChanges() async {
@@ -893,7 +946,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
       message: 'هل أنت متأكد من حفظ التغييرات التي أجريتها؟',
     );
 
-    if (!confirm) return;
+    if (!confirm || !mounted) return;
 
     final user = FirebaseAuth.instance.currentUser;
 
@@ -904,82 +957,104 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
     setState(() => isSaving = true);
 
+    final List<String> uploadedNow = []; // للتنظيف لو فشل الحفظ
+    bool committed = false;
+
     try {
-      // 1) رفع الصور الجديدة (القديمة نحتفظ برابطها ومسارها)
+      // 1) رفع الصور الجديدة بالتوازي (القديمة نحتفظ برابطها ومسارها)
       final int stamp = DateTime.now().millisecondsSinceEpoch;
-      final Map<int, List<Map<String, String>>> uploaded = {};
+      final Map<String, Map<String, String>> uploaded = {};
       final Set<String> newPaths = {};
+      final List<Future<void>> uploads = [];
 
       for (final entry in boxes.entries) {
         final int boxNumber = entry.key;
         final items = entry.value;
 
-        uploaded[boxNumber] = [];
-
         for (int i = 0; i < items.length; i++) {
           final e = items[i];
-
+          final String key = '${boxNumber}_$i';
           final String existingUrl = (e['imageUrl'] ?? '').toString();
 
           if (existingUrl.isNotEmpty) {
-            uploaded[boxNumber]!.add({
-              'url': existingUrl,
-              'path': (e['imagePath'] ?? '').toString(),
-            });
+            final String p = (e['imagePath'] ?? '').toString();
+            uploaded[key] = {'url': existingUrl, 'path': p};
+            if (p.isNotEmpty) newPaths.add(p);
           } else {
-            final path =
+            final String path =
                 'donations/${widget.donationId}/boxes/box_$boxNumber/item_${i}_$stamp.jpg';
+            final Uint8List bytes = e['image'] as Uint8List;
 
-            final up = await uploadImage(e['image'] as Uint8List, path);
+            uploadedNow.add(path);
 
-            uploaded[boxNumber]!.add(up);
+            uploads.add(() async {
+              final up = await uploadImage(bytes, path);
+              uploaded[key] = up;
+              newPaths.add(up['path'] ?? path);
+            }());
           }
-
-          final p = uploaded[boxNumber]!.last['path'] ?? '';
-          if (p.isNotEmpty) newPaths.add(p);
         }
       }
 
-      // 2) كل شي في batch واحد: حذف القديم + كتابة الجديد
-      final batch = firestore.batch();
-      final List<Map<String, dynamic>> toEmbed = []; // للتوصية بعد الحفظ
+      await Future.wait(uploads);
 
+      // 2) نقرأ الموجود حاليًا عشان نعيد استخدام الـ IDs
       final donationRef = firestore
           .collection('donations')
           .doc(widget.donationId);
+
+      final donationSnap = await donationRef.get();
+      final String currentStatus = (donationSnap.data()?['status'] ?? 'draft')
+          .toString();
+
+      final oldItemsSnap = await firestore
+          .collection('items')
+          .where('donationId', isEqualTo: widget.donationId)
+          .get();
+
+      final oldBoxesSnap = await firestore
+          .collection('donation_boxes')
+          .where('donationId', isEqualTo: widget.donationId)
+          .get();
+
+      final Map<int, DocumentReference<Map<String, dynamic>>> oldBoxRefs = {};
+      for (final d in oldBoxesSnap.docs) {
+        final n = (d.data()['boxNumber'] as num?)?.toInt() ?? 0;
+        oldBoxRefs.putIfAbsent(n, () => d.reference);
+      }
+
+      final Map<String, DocumentReference<Map<String, dynamic>>> oldItemRefs =
+          {};
+      for (final d in oldItemsSnap.docs) {
+        final data = d.data();
+        final b = (data['boxNumber'] as num?)?.toInt() ?? 0;
+        final n = (data['itemNumber'] as num?)?.toInt() ?? 0;
+        oldItemRefs.putIfAbsent('${b}_$n', () => d.reference);
+      }
+
+      // 3) batch واحد: تحديث/إنشاء + حذف اللي ما عاد له وجود
+      final batch = firestore.batch();
+      final List<Map<String, dynamic>> toEmbed = []; // للتوصية بعد الحفظ
+      final Set<String> keptPaths = {}; // مسارات الدوكمنتات اللي نستخدمها
 
       batch.update(donationRef, {
         'gender': selectedGender,
         'ageGroup': selectedAgeGroup!['label'],
         'numberOfItems': totalItems,
         'generalSize': generalSize ?? "",
-        'status': 'draft',
         'updatedAt': FieldValue.serverTimestamp(),
       });
-
-      final oldItems = await firestore
-          .collection('items')
-          .where('donationId', isEqualTo: widget.donationId)
-          .get();
-
-      for (final d in oldItems.docs) {
-        batch.delete(d.reference);
-      }
-
-      final oldBoxes = await firestore
-          .collection('donation_boxes')
-          .where('donationId', isEqualTo: widget.donationId)
-          .get();
-
-      for (final d in oldBoxes.docs) {
-        batch.delete(d.reference);
-      }
 
       for (final entry in boxes.entries) {
         final int boxNumber = entry.key;
         final items = entry.value;
 
-        final boxRef = firestore.collection('donation_boxes').doc();
+        final existingBoxRef = oldBoxRefs[boxNumber];
+        final bool boxIsNew = existingBoxRef == null;
+        final boxRef =
+            existingBoxRef ?? firestore.collection('donation_boxes').doc();
+
+        keptPaths.add(boxRef.path);
 
         batch.set(boxRef, {
           'donationId': widget.donationId,
@@ -992,19 +1067,34 @@ If it is valid, answer only with JSON (no extra text) in this format:
             'max': selectedAgeGroup!['max'],
           },
           'generalSize': generalSize ?? "",
-          'status': 'draft',
           'itemsCount': items.length,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
+          if (boxIsNew) ...{
+            'status': currentStatus,
+            'timestamp': FieldValue.serverTimestamp(),
+          } else
+            // الصناديق القديمة كانت تخزن القطع في array، ما عاد نحتاجه
+            'items': FieldValue.delete(),
+        }, SetOptions(merge: true));
 
         for (int i = 0; i < items.length; i++) {
           final e = items[i];
-          final itemRef = firestore.collection('items').doc();
-          toEmbed.add({
-            'ref': itemRef,
-            'imageUrl': uploaded[boxNumber]![i]['url'],
-            'description': (e['description'] ?? '').toString(),
-          });
+
+          final existingItemRef = oldItemRefs['${boxNumber}_${i + 1}'];
+          final bool itemIsNew = existingItemRef == null;
+          final itemRef =
+              existingItemRef ?? firestore.collection('items').doc();
+
+          keptPaths.add(itemRef.path);
+
+          final up = uploaded['${boxNumber}_$i']!;
+
+          if (itemIsNew || e['needsEmbed'] == true) {
+            toEmbed.add({
+              'ref': itemRef,
+              'imageUrl': up['url'],
+              'description': (e['description'] ?? '').toString(),
+            });
+          }
 
           batch.set(itemRef, {
             'boxId': boxRef.id, // ربط بالصندوق
@@ -1014,38 +1104,57 @@ If it is valid, answer only with JSON (no extra text) in this format:
             'itemNumber': i + 1,
             'type': e['type'],
             'size': e['type'] == "حذاء" ? e['size'] : null,
-            'imageUrl': uploaded[boxNumber]![i]['url'],
-            'imagePath': uploaded[boxNumber]![i]['path'],
+            'imageUrl': up['url'],
+            'imagePath': up['path'],
             'description': (e['description'] ?? '').toString(),
-            'status': 'draft',
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+            if (itemIsNew) ...{
+              'status': currentStatus,
+              'createdAt': FieldValue.serverTimestamp(),
+            } else
+              'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
         }
+      }
+
+      // نحذف فقط اللي انشال فعلاً
+      for (final d in oldItemsSnap.docs) {
+        if (!keptPaths.contains(d.reference.path)) batch.delete(d.reference);
+      }
+
+      for (final d in oldBoxesSnap.docs) {
+        if (!keptPaths.contains(d.reference.path)) batch.delete(d.reference);
       }
 
       await batch.commit();
+      committed = true;
 
-      // بصمة كل قطعة للتوصية (القطع تنكتب من جديد، فنحسبها لها كلها)
-      Recommender.embedInBackground(toEmbed);
+      // بصمة التوصية فقط للقطع الجديدة أو اللي تغيرت صورتها/وصفها
+      if (toEmbed.isNotEmpty) {
+        Recommender.embedInBackground(toEmbed);
+      }
 
-      // 3) نحدّث الحالة المحلية عشان أي حفظ ثاني يعيد استخدام الصور
+      // 4) نحدّث الحالة المحلية عشان أي حفظ ثاني يعيد استخدام الصور
       for (final entry in boxes.entries) {
         for (int i = 0; i < entry.value.length; i++) {
-          entry.value[i]['imageUrl'] = uploaded[entry.key]![i]['url'];
-          entry.value[i]['imagePath'] = uploaded[entry.key]![i]['path'];
+          final up = uploaded['${entry.key}_$i']!;
+          entry.value[i]['imageUrl'] = up['url'];
+          entry.value[i]['imagePath'] = up['path'];
+          entry.value[i]['needsEmbed'] = false;
         }
       }
 
-      // 4) نحذف من Storage الصور اللي ما عادت مستخدمة
+      // 5) نحذف من Storage الصور اللي ما عادت مستخدمة
       final unused = _originalImagePaths.difference(newPaths);
 
-      for (final p in unused) {
-        try {
-          await FirebaseStorage.instance.ref().child(p).delete();
-        } catch (e) {
-          debugPrint('Storage cleanup error: $e');
-        }
-      }
+      await Future.wait(
+        unused.map((p) async {
+          try {
+            await FirebaseStorage.instance.ref().child(p).delete();
+          } catch (e) {
+            debugPrint('Storage cleanup error: $e');
+          }
+        }),
+      );
 
       _originalImagePaths = newPaths;
 
@@ -1058,6 +1167,15 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
       AppDesign.showSuccessSnackBar(context, 'تم حفظ التغييرات بنجاح');
     } catch (e) {
+      // لو الحفظ فشل قبل الـ commit، الصور اللي انرفعت للتو يتيمة فنحذفها
+      if (!committed) {
+        for (final p in uploadedNow) {
+          try {
+            await FirebaseStorage.instance.ref().child(p).delete();
+          } catch (_) {}
+        }
+      }
+
       if (!mounted) return;
       setState(() => isSaving = false);
 
@@ -1068,8 +1186,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
   }
 
   Future<void> _showBackDialog() async {
+    if (isSaving) return;
+
     if (changesSaved) {
-      Navigator.pop(context);
+      Navigator.pop(context, true);
       return;
     }
 
@@ -1145,7 +1265,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
           gradient: LinearGradient(
             colors: isSaved
                 ? [AppDesign.success, AppDesign.primary]
-                : [AppDesign.softGreen.withOpacity(0.2), AppDesign.softGreen],
+                : [
+                    AppDesign.softGreen.withValues(alpha: 0.2),
+                    AppDesign.softGreen,
+                  ],
           ),
         ),
         child: Center(
@@ -1174,6 +1297,14 @@ If it is valid, answer only with JSON (no extra text) in this format:
   }
 
   Widget _buildItemCard(int idx, Map<String, dynamic> item) {
+    final String? currentType = _typeOptions.contains(item['type'])
+        ? item['type'] as String?
+        : null;
+
+    final String? currentSize = _shoeSizes.contains(item['size'])
+        ? item['size'] as String?
+        : null;
+
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppDesign.radiusMD),
@@ -1228,6 +1359,14 @@ If it is valid, answer only with JSON (no extra text) in this format:
                               fit: BoxFit.cover,
                               width: double.infinity,
                               height: double.infinity,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return const Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                );
+                              },
                               errorBuilder: (_, __, ___) {
                                 return const Icon(Icons.broken_image);
                               },
@@ -1259,44 +1398,28 @@ If it is valid, answer only with JSON (no extra text) in this format:
                   child: Column(
                     children: [
                       DropdownButtonFormField<String>(
-                        value: item['type'] as String?,
+                        value: currentType,
                         decoration: InputDecoration(
                           labelText: "نوع القطعة",
                           filled: true,
                           fillColor: AppDesign.surface,
                         ),
-                        items:
-                            const [
-                                  "قميص",
-                                  "تيشيرت",
-                                  "كنزة",
-                                  "بنطلون",
-                                  "تنورة",
-                                  "فستان",
-                                  "جاكيت",
-                                  "معطف",
-                                  "ثوب",
-                                  "شماغ",
-                                  "عباية",
-                                  "حذاء",
-                                  "حقيبة",
-                                  "قبعة",
-                                  "شال",
-                                  "نظارة",
-                                  "ساعة",
-                                  "حزام",
-                                  "قفازات",
-                                ]
-                                .map(
-                                  (e) => DropdownMenuItem<String>(
-                                    value: e,
-                                    child: Text(e),
-                                  ),
-                                )
-                                .toList(),
+                        items: _typeOptions
+                            .map(
+                              (e) => DropdownMenuItem<String>(
+                                value: e,
+                                child: Text(e),
+                              ),
+                            )
+                            .toList(),
                         onChanged: (v) => setState(() {
                           boxes[openedBox]![idx]['type'] = v;
                           boxes[openedBox]![idx]['size'] = null;
+
+                          // الوصف القديم كان يصف النوع السابق، فنمسحه
+                          // عشان ما يتسرب وصف غلط لموديل التوصية
+                          boxes[openedBox]![idx]['description'] = '';
+                          boxes[openedBox]![idx]['needsEmbed'] = true;
 
                           savedBoxes.remove(openedBox);
                           changesSaved = false;
@@ -1305,13 +1428,13 @@ If it is valid, answer only with JSON (no extra text) in this format:
                       if (item['type'] == "حذاء") ...[
                         AppGap.sm,
                         DropdownButtonFormField<String>(
-                          value: item['size'] as String?,
+                          value: currentSize,
                           decoration: InputDecoration(
                             labelText: "مقاس الحذاء",
                             filled: true,
                             fillColor: AppDesign.surface,
                           ),
-                          items: List.generate(28, (i) => (20 + i).toString())
+                          items: _shoeSizes
                               .map(
                                 (e) => DropdownMenuItem<String>(
                                   value: e,
@@ -1383,103 +1506,52 @@ If it is valid, answer only with JSON (no extra text) in this format:
   @override
   void dispose() {
     _itemCountController.dispose();
-
-    for (final c in _descControllers.values) {
-      c.dispose();
-    }
-    _descControllers.clear();
-
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            'تعديل التبرع',
-            style: AppDesign.h2Style.copyWith(color: AppDesign.textPrimary),
+    // PopScope: زر الرجوع في الجوال (والإيماءة) يمر على نفس نافذة التأكيد
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _showBackDialog();
+      },
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(
+              'تعديل التبرع',
+              style: AppDesign.h2Style.copyWith(color: AppDesign.textPrimary),
+            ),
+            centerTitle: true,
+            backgroundColor: AppDesign.background,
+            foregroundColor: AppDesign.textPrimary,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: _showBackDialog,
+            ),
           ),
-          centerTitle: true,
           backgroundColor: AppDesign.background,
-          foregroundColor: AppDesign.textPrimary,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: _showBackDialog,
-          ),
-        ),
-        backgroundColor: AppDesign.background,
-        body: isLoadingBoxes
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                padding: AppPadding.screen,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildTopInfoCard(),
-                    AppGap.section,
+          body: isLoadingBoxes
+              ? const Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                  padding: AppPadding.screen,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTopInfoCard(),
+                      AppGap.section,
 
-                    DropdownButtonFormField<String>(
-                      value: selectedGender,
-                      decoration: _sharedInputDecoration(
-                        label: "الجنس",
-                        icon: Icons.person_outline,
-                      ),
-                      items: ["ذكر", "أنثى"]
-                          .map(
-                            (e) => DropdownMenuItem<String>(
-                              value: e,
-                              child: Text(e),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: inputsLocked
-                          ? null
-                          : (v) => setState(() {
-                              selectedGender = v;
-                              changesSaved = false;
-                            }),
-                    ),
-
-                    AppGap.lg,
-
-                    DropdownButtonFormField<Map<String, dynamic>>(
-                      value: selectedAgeGroup,
-                      decoration: _sharedInputDecoration(
-                        label: "الفئة العمرية",
-                        icon: Icons.cake_outlined,
-                      ),
-                      items: ageGroups.map((age) {
-                        return DropdownMenuItem<Map<String, dynamic>>(
-                          value: age,
-                          child: Text(age['label']),
-                        );
-                      }).toList(),
-                      onChanged: inputsLocked
-                          ? null
-                          : (v) => setState(() {
-                              selectedAgeGroup = v;
-                              changesSaved = false;
-
-                              if (!ageNeedsSize()) {
-                                generalSize = null;
-                              }
-                            }),
-                    ),
-
-                    if (ageNeedsSize()) ...[
-                      AppGap.lg,
                       DropdownButtonFormField<String>(
-                        value: sizeRanges.contains(generalSize)
-                            ? generalSize
-                            : null,
+                        value: selectedGender,
                         decoration: _sharedInputDecoration(
-                          label: "المقاس",
-                          icon: Icons.straighten,
+                          label: "الجنس",
+                          icon: Icons.person_outline,
                         ),
-                        items: sizeRanges
+                        items: ["ذكر", "أنثى"]
                             .map(
                               (e) => DropdownMenuItem<String>(
                                 value: e,
@@ -1490,146 +1562,209 @@ If it is valid, answer only with JSON (no extra text) in this format:
                         onChanged: inputsLocked
                             ? null
                             : (v) => setState(() {
-                                generalSize = v;
+                                selectedGender = v;
                                 changesSaved = false;
                               }),
                       ),
-                    ],
 
-                    AppGap.lg,
+                      AppGap.lg,
 
-                    TextField(
-                      controller: _itemCountController,
-                      keyboardType: TextInputType.number,
-                      onEditingComplete: () {
-                        if (!inputsLocked) {
-                          _updateItemCount(_itemCountController.text);
-                        }
-                      },
-                      enabled: !inputsLocked,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: _sharedInputDecoration(
-                        label: "إجمالي عدد القطع",
-                        icon: Icons.format_list_numbered_rounded,
+                      DropdownButtonFormField<Map<String, dynamic>>(
+                        value: selectedAgeGroup,
+                        decoration: _sharedInputDecoration(
+                          label: "الفئة العمرية",
+                          icon: Icons.cake_outlined,
+                        ),
+                        items: ageGroups.map((age) {
+                          return DropdownMenuItem<Map<String, dynamic>>(
+                            value: age,
+                            child: Text(age['label']),
+                          );
+                        }).toList(),
+                        onChanged: inputsLocked
+                            ? null
+                            : (v) => setState(() {
+                                selectedAgeGroup = v;
+                                changesSaved = false;
+
+                                if (!ageNeedsSize()) {
+                                  generalSize = null;
+                                }
+                              }),
                       ),
-                    ),
 
-                    AppGap.section,
-
-                    if (totalBoxes > 0 && openedBox == null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "اختر صندوقًا لتعديل محتواه:",
-                            style: AppDesign.subtitleStyle.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                      if (ageNeedsSize()) ...[
+                        AppGap.lg,
+                        DropdownButtonFormField<String>(
+                          value: sizeRanges.contains(generalSize)
+                              ? generalSize
+                              : null,
+                          decoration: _sharedInputDecoration(
+                            label: "المقاس",
+                            icon: Icons.straighten,
                           ),
-                          AppGap.md,
-                          GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: totalBoxes,
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  mainAxisSpacing: AppDesign.spaceMD,
-                                  crossAxisSpacing: AppDesign.spaceMD,
-                                  childAspectRatio: 1,
+                          items: sizeRanges
+                              .map(
+                                (e) => DropdownMenuItem<String>(
+                                  value: e,
+                                  child: Text(e),
                                 ),
-                            itemBuilder: (context, idx) {
-                              final boxNum = idx + 1;
-                              return _buildBoxTile(boxNum);
-                            },
+                              )
+                              .toList(),
+                          onChanged: inputsLocked
+                              ? null
+                              : (v) => setState(() {
+                                  generalSize = v;
+                                  changesSaved = false;
+                                }),
+                        ),
+                      ],
+
+                      AppGap.lg,
+
+                      // يطبّق العدد عند الخروج من الحقل (إغلاق الكيبورد أو
+                      // الضغط خارجه) وليس فقط عند زر "تم" في الكيبورد
+                      Focus(
+                        onFocusChange: (hasFocus) {
+                          if (!hasFocus && !inputsLocked) {
+                            _updateItemCount(_itemCountController.text);
+                          }
+                        },
+                        child: TextField(
+                          controller: _itemCountController,
+                          keyboardType: TextInputType.number,
+                          onEditingComplete: () =>
+                              FocusScope.of(context).unfocus(),
+                          onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                          enabled: !inputsLocked,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          decoration: _sharedInputDecoration(
+                            label: "إجمالي عدد القطع",
+                            icon: Icons.format_list_numbered_rounded,
                           ),
-                        ],
+                        ),
                       ),
 
-                    if (openedBox != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              TextButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    openedBox = null;
-                                  });
-                                },
-                                icon: const Icon(Icons.arrow_back),
-                                label: const Text("رجوع"),
+                      AppGap.section,
+
+                      if (totalBoxes > 0 && openedBox == null)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "اختر صندوقًا لتعديل محتواه:",
+                              style: AppDesign.subtitleStyle.copyWith(
+                                fontWeight: FontWeight.w700,
                               ),
-                              Expanded(
-                                child: Center(
-                                  child: Text(
-                                    "الصندوق رقم $openedBox",
-                                    style: AppDesign.h2Style.copyWith(
-                                      fontSize: 18,
+                            ),
+                            AppGap.md,
+                            GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: totalBoxes,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 3,
+                                    mainAxisSpacing: AppDesign.spaceMD,
+                                    crossAxisSpacing: AppDesign.spaceMD,
+                                    childAspectRatio: 1,
+                                  ),
+                              itemBuilder: (context, idx) {
+                                final boxNum = idx + 1;
+                                return _buildBoxTile(boxNum);
+                              },
+                            ),
+                          ],
+                        ),
+
+                      if (openedBox != null)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      openedBox = null;
+                                    });
+                                  },
+                                  icon: const Icon(Icons.arrow_back),
+                                  label: const Text("رجوع"),
+                                ),
+                                Expanded(
+                                  child: Center(
+                                    child: Text(
+                                      "الصندوق رقم $openedBox",
+                                      style: AppDesign.h2Style.copyWith(
+                                        fontSize: 18,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 70),
-                            ],
-                          ),
-                          AppGap.sm,
-                          ...boxes[openedBox]!.asMap().entries.map(
-                            (entry) => _buildItemCard(entry.key, entry.value),
-                          ),
-                          AppGap.md,
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              // معطّل لين تكتمل كل بيانات الصندوق
-                              onPressed: _validateOpenedBox(openedBox!)
-                                  ? _markCurrentBoxDone
-                                  : null,
-                              child: const Text("حفظ الصندوق"),
+                                const SizedBox(width: 70),
+                              ],
                             ),
+                            AppGap.sm,
+                            ...boxes[openedBox]!.asMap().entries.map(
+                              (entry) => _buildItemCard(entry.key, entry.value),
+                            ),
+                            AppGap.md,
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                // معطّل لين تكتمل كل بيانات الصندوق
+                                onPressed: _validateOpenedBox(openedBox!)
+                                    ? _markCurrentBoxDone
+                                    : null,
+                                child: const Text("حفظ الصندوق"),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                      AppGap.section,
+
+                      if (openedBox == null) ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed:
+                                savedBoxes.length == totalBoxes &&
+                                    totalBoxes > 0 &&
+                                    itemCountError == null &&
+                                    !isSaving &&
+                                    !changesSaved
+                                ? _saveChanges
+                                : null,
+                            child: isSaving
+                                ? const SizedBox(
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text("حفظ التغييرات"),
                           ),
-                        ],
-                      ),
-
-                    AppGap.section,
-
-                    if (openedBox == null) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed:
-                              savedBoxes.length == totalBoxes &&
-                                  totalBoxes > 0 &&
-                                  !isSaving &&
-                                  !changesSaved
-                              ? _saveChanges
-                              : null,
-                          child: isSaving
-                              ? const SizedBox(
-                                  height: 22,
-                                  width: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text("حفظ التغييرات"),
                         ),
-                      ),
-                      AppGap.md,
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: changesSaved && !isSaving
-                              ? () => Navigator.pop(context, true)
-                              : null,
-                          child: const Text("تم"),
+                        AppGap.md,
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: changesSaved && !isSaving
+                                ? () => Navigator.pop(context, true)
+                                : null,
+                            child: const Text("تم"),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }
