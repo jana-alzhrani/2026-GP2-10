@@ -9,12 +9,10 @@ class WelcomePage extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          // Background Image
           Positioned.fill(
             child: Image.asset('assets/images/madad.jpeg', fit: BoxFit.cover),
           ),
 
-          // Gradient overlay for better button visibility
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
@@ -27,7 +25,6 @@ class WelcomePage extends StatelessWidget {
             ),
           ),
 
-          // Buttons
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 30),
@@ -35,7 +32,6 @@ class WelcomePage extends StatelessWidget {
                 children: [
                   const Spacer(),
 
-                  // Login Button
                   SizedBox(
                     width: double.infinity,
                     height: AppSizes.buttonHeight,
@@ -49,7 +45,6 @@ class WelcomePage extends StatelessWidget {
 
                   const SizedBox(height: 16),
 
-                  // Sign Up Button
                   SizedBox(
                     width: double.infinity,
                     height: AppSizes.buttonHeight,
