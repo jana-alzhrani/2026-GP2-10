@@ -13,9 +13,9 @@ class CourierManagementPage extends StatefulWidget {
 }
 
 class _CourierManagementPageState extends State<CourierManagementPage> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static const int _maxBatchOperations = 450;
 
-  // البحث
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
@@ -104,9 +104,7 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     return status.toLowerCase() == 'active' || status == 'نشط';
   }
 
-  // حساب الرحلات المكتملة بنفس طريقة CourierHomePage
   Future<int> _getCompletedDeliveries(String userId) async {
-    // حساب التبرعات المكتملة
     final donationsSnapshot = await _firestore
         .collection('donations')
         .where('courierId', isEqualTo: userId)
@@ -122,14 +120,12 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     final completedCount =
         donationsSnapshot.docs.length + requestsSnapshot.docs.length;
 
-    // البحث عن وثيقة المندوب في مجموعة couriers
     final courierSnapshot = await _firestore
         .collection('couriers')
         .where('userID', isEqualTo: userId)
         .limit(1)
         .get();
 
-    // تحديث العدد في Firebase إذا كان مختلفًا
     if (courierSnapshot.docs.isNotEmpty) {
       final courierDoc = courierSnapshot.docs.first;
       final currentCount = courierDoc.data()['completedDeliveries'];
@@ -144,7 +140,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     return completedCount;
   }
 
-  // إضافة مندوب
   Future<void> _addCourier() async {
     await Navigator.push(
       context,
@@ -156,7 +151,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     }
   }
 
-  // تعديل بيانات المندوب
   Future<void> _editCourier({
     required String courierId,
     required String userId,
@@ -173,7 +167,28 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     }
   }
 
-  // حذف منطقي للمندوب مع تحرير مهامه النشطة
+  Future<void> _commitInChunks(
+    List<void Function(WriteBatch batch)> operations,
+  ) async {
+    for (
+      var start = 0;
+      start < operations.length;
+      start += _maxBatchOperations
+    ) {
+      final end = start + _maxBatchOperations < operations.length
+          ? start + _maxBatchOperations
+          : operations.length;
+
+      final batch = _firestore.batch();
+
+      for (final operation in operations.sublist(start, end)) {
+        operation(batch);
+      }
+
+      await batch.commit();
+    }
+  }
+
   Future<void> _deleteCourier(String courierId) async {
     try {
       final courierRef = _firestore.collection('couriers').doc(courierId);
@@ -190,41 +205,25 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
       final data = courierDoc.data() ?? <String, dynamic>{};
       final userId = (data['userID'] ?? '').toString().trim();
 
-      final batch = _firestore.batch();
-
-      // 1) الاحتفاظ بوثيقة المندوب وتغيير حالتها إلى deleted.
-      // نحدّث الحقلين لدعم البيانات القديمة التي تستخدم statues.
-      batch.update(courierRef, {
-        'status': 'deleted',
-        'deletedAt': FieldValue.serverTimestamp(),
-      });
+      final operations = <void Function(WriteBatch batch)>[];
 
       if (userId.isNotEmpty) {
-        // تحديث حالة حساب المستخدم دون حذف بياناته.
-        // merge يمنع استبدال بقية بيانات المستخدم.
-        batch.set(_firestore.collection('Users').doc(userId), {
-          'status': 'deleted',
-          'deletedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        // 2) تحرير المهام النشطة في التبرعات وطلبات المستفيدين.
         for (final collection in ['donations', 'requests']) {
           final tasksSnap = await _firestore
               .collection(collection)
-              .where('courierID', isEqualTo: userId)
+              .where('courierId', isEqualTo: userId)
               .where('courierTaskStatus', isEqualTo: 'active')
               .get();
 
           for (final taskDoc in tasksSnap.docs) {
-            // إزالة ارتباط المهمة بالمندوب حتى يمكن إسنادها
-            // إلى مندوب آخر لاحقًا.
-            batch.update(taskDoc.reference, {
-              'courierID': FieldValue.delete(),
-              'courierTaskStatus': FieldValue.delete(),
-              'acceptedAt': FieldValue.delete(),
-            });
+            operations.add(
+              (batch) => batch.update(taskDoc.reference, {
+                'courierId': FieldValue.delete(),
+                'courierTaskStatus': FieldValue.delete(),
+                'acceptedAt': FieldValue.delete(),
+              }),
+            );
 
-            // إزالة ارتباط المندوب بالصناديق التابعة للمهمة.
             final boxesSnap = await _firestore
                 .collection('donation_boxes')
                 .where(
@@ -234,16 +233,33 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                 .get();
 
             for (final boxDoc in boxesSnap.docs) {
-              batch.update(boxDoc.reference, {
-                'courierID': FieldValue.delete(),
-              });
+              operations.add(
+                (batch) => batch.update(boxDoc.reference, {
+                  'courierId': FieldValue.delete(),
+                }),
+              );
             }
           }
         }
       }
 
-      // تنفيذ عمليات التحديث
-      await batch.commit();
+      operations.add(
+        (batch) => batch.update(courierRef, {
+          'status': 'deleted',
+          'deletedAt': FieldValue.serverTimestamp(),
+        }),
+      );
+
+      if (userId.isNotEmpty) {
+        operations.add(
+          (batch) => batch.set(_firestore.collection('Users').doc(userId), {
+            'status': 'deleted',
+            'deletedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true)),
+        );
+      }
+
+      await _commitInChunks(operations);
 
       if (!mounted) return;
 
@@ -257,8 +273,7 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     }
   }
 
-  // تأكيد الحذف
-  Future<void> _showDeleteDialog(String courierId, String courierName) async {
+  Future<void> _showDeleteDialog(String courierId) async {
     final confirmed = await AppDesign.showAppDialog(
       context: context,
       title: 'حذف المندوب',
@@ -278,10 +293,7 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: AppDesign.background,
-
-        // موقع زر الإضافة أسفل اليمين
         floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-
         floatingActionButton: FloatingActionButton(
           onPressed: _addCourier,
           backgroundColor: AppDesign.primary,
@@ -292,7 +304,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
           ),
           child: const Icon(Icons.add, size: 30),
         ),
-
         body: SafeArea(
           child: Column(
             children: [
@@ -300,7 +311,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
 
               const SizedBox(height: 18),
 
-              // خانة البحث
               _buildSearchField(),
 
               const SizedBox(height: 15),
@@ -328,8 +338,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                       );
                     }
 
-                    // إخفاء المناديب المحذوفين من القائمة
-                    // مع إبقاء بياناتهم في Firestore.
                     final docs = (snapshot.data?.docs ?? []).where((doc) {
                       final status = _getStatus(doc.data()).toLowerCase();
 
@@ -382,7 +390,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                             final phone = (userData['phone'] ?? 'غير متوفر')
                                 .toString();
 
-                            // البحث بالاسم أو رقم الجوال
                             final searchName = name.toLowerCase();
                             final searchPhone = _normalizePhone(phone);
                             final normalizedQuery = _normalizePhone(
@@ -398,7 +405,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                               return const SizedBox.shrink();
                             }
 
-                            // جلب عدد الرحلات المكتملة من Firestore
                             return FutureBuilder<int>(
                               future: _getCompletedDeliveries(userId),
                               builder: (context, completedSnapshot) {
@@ -438,7 +444,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     );
   }
 
-  // عنوان الصفحة
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
@@ -477,7 +482,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     );
   }
 
-  // حالة عدم وجود مناديب
   Widget _buildEmptyState() {
     return Center(
       child: Padding(
@@ -507,7 +511,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     );
   }
 
-  // بطاقة التحميل
   Widget _buildLoadingCard() {
     return Container(
       padding: const EdgeInsets.all(22),
@@ -522,7 +525,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     );
   }
 
-  // بطاقة بيانات المندوب
   Widget _buildCourierCard({
     required String courierId,
     required String userId,
@@ -553,7 +555,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
       ),
       child: Column(
         children: [
-          // الاسم ورقم الجوال والصورة والحالة
           Row(
             children: [
               CircleAvatar(
@@ -646,7 +647,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
 
           const SizedBox(height: 14),
 
-          // الرحلات المكتملة
           Row(
             children: [
               const Icon(
@@ -676,7 +676,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
 
           const SizedBox(height: 16),
 
-          // أزرار التعديل والحذف
           Row(
             children: [
               Expanded(
@@ -710,7 +709,7 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                 child: SizedBox(
                   height: 54,
                   child: ElevatedButton.icon(
-                    onPressed: () => _showDeleteDialog(courierId, courierName),
+                    onPressed: () => _showDeleteDialog(courierId),
                     icon: const Icon(Icons.delete_outline, size: 19),
                     label: const Text('حذف'),
                     style: ElevatedButton.styleFrom(
@@ -735,7 +734,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     );
   }
 
-  // بطاقة المندوب الذي لا يرتبط بحساب مستخدم
   Widget _buildInvalidCourierCard(String courierId, String status) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -781,7 +779,7 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
             width: double.infinity,
             height: 54,
             child: ElevatedButton.icon(
-              onPressed: () => _showDeleteDialog(courierId, 'هذا المندوب'),
+              onPressed: () => _showDeleteDialog(courierId),
               icon: const Icon(Icons.delete_outline),
               label: const Text('حذف'),
               style: ElevatedButton.styleFrom(
