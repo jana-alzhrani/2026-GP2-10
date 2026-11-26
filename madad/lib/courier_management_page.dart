@@ -13,8 +13,6 @@ class CourierManagementPage extends StatefulWidget {
 }
 
 class _CourierManagementPageState extends State<CourierManagementPage> {
-  static const int _maxBatchOperations = 450;
-
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
 
@@ -167,28 +165,6 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     }
   }
 
-  Future<void> _commitInChunks(
-    List<void Function(WriteBatch batch)> operations,
-  ) async {
-    for (
-      var start = 0;
-      start < operations.length;
-      start += _maxBatchOperations
-    ) {
-      final end = start + _maxBatchOperations < operations.length
-          ? start + _maxBatchOperations
-          : operations.length;
-
-      final batch = _firestore.batch();
-
-      for (final operation in operations.sublist(start, end)) {
-        operation(batch);
-      }
-
-      await batch.commit();
-    }
-  }
-
   Future<void> _deleteCourier(String courierId) async {
     try {
       final courierRef = _firestore.collection('couriers').doc(courierId);
@@ -205,9 +181,19 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
       final data = courierDoc.data() ?? <String, dynamic>{};
       final userId = (data['userID'] ?? '').toString().trim();
 
-      final operations = <void Function(WriteBatch batch)>[];
+      final batch = _firestore.batch();
+
+      batch.update(courierRef, {
+        'status': 'deleted',
+        'deletedAt': FieldValue.serverTimestamp(),
+      });
 
       if (userId.isNotEmpty) {
+        batch.set(_firestore.collection('Users').doc(userId), {
+          'status': 'deleted',
+          'deletedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
         for (final collection in ['donations', 'requests']) {
           final tasksSnap = await _firestore
               .collection(collection)
@@ -216,13 +202,11 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
               .get();
 
           for (final taskDoc in tasksSnap.docs) {
-            operations.add(
-              (batch) => batch.update(taskDoc.reference, {
-                'courierId': FieldValue.delete(),
-                'courierTaskStatus': FieldValue.delete(),
-                'acceptedAt': FieldValue.delete(),
-              }),
-            );
+            batch.update(taskDoc.reference, {
+              'courierId': FieldValue.delete(),
+              'courierTaskStatus': FieldValue.delete(),
+              'acceptedAt': FieldValue.delete(),
+            });
 
             final boxesSnap = await _firestore
                 .collection('donation_boxes')
@@ -233,33 +217,15 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                 .get();
 
             for (final boxDoc in boxesSnap.docs) {
-              operations.add(
-                (batch) => batch.update(boxDoc.reference, {
-                  'courierId': FieldValue.delete(),
-                }),
-              );
+              batch.update(boxDoc.reference, {
+                'courierId': FieldValue.delete(),
+              });
             }
           }
         }
       }
 
-      operations.add(
-        (batch) => batch.update(courierRef, {
-          'status': 'deleted',
-          'deletedAt': FieldValue.serverTimestamp(),
-        }),
-      );
-
-      if (userId.isNotEmpty) {
-        operations.add(
-          (batch) => batch.set(_firestore.collection('Users').doc(userId), {
-            'status': 'deleted',
-            'deletedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true)),
-        );
-      }
-
-      await _commitInChunks(operations);
+      await batch.commit();
 
       if (!mounted) return;
 
