@@ -32,12 +32,10 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
   String firstName = "";
   String lastName = "";
 
-  // ---- Cart badge state ----
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _cartSub;
   int _cartCount = 0;
-  int _cartCountSeq = 0; // ignores stale results that finish out of order
+  int _cartCountSeq = 0;
 
-  // ---- Beneficiary status (live) ----
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _statusSub;
 
   @override
@@ -58,10 +56,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     _statusSub?.cancel();
     super.dispose();
   }
-
-  // ============================================================
-  // USER DATA
-  // ============================================================
 
   Future<void> loadUserData() async {
     try {
@@ -89,7 +83,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     try {
       String status = beneficiaryStatus;
 
-      // نستخدم الحالة المحمّلة مسبقًا، ونستعلم فقط إذا لم يكتمل التحميل بعد
       if (!_beneficiaryStatusLoaded) {
         final query = await FirebaseFirestore.instance
             .collection('beneficiaries')
@@ -134,7 +127,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
         ),
       );
 
-      // Back from the cart: reload the donation items.
       if (!mounted) return;
       await _onRefresh();
     } catch (e) {
@@ -176,10 +168,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
         );
   }
 
-  // ============================================================
-  // CART
-  // ============================================================
-
   void _listenToCart() {
     _cartSub = FirebaseFirestore.instance
         .collection('cart')
@@ -194,9 +182,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
         }, onError: (e) => debugPrint('CART STREAM ERROR: $e'));
   }
 
-  // ============================================================
-  // NOTIFICATIONS
-  // ============================================================
   Future<void> _showNoNotifications() async {
     await showGeneralDialog<void>(
       context: context,
@@ -312,7 +297,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     final maxItems = limits.maxItemsPerPeriod;
     final remaining = limits.itemsRemaining;
 
-    // Percentage of the quota already used.
     final used = (maxItems - remaining).clamp(0, maxItems);
     final progress = maxItems == 0 ? 0.0 : used / maxItems;
 
@@ -669,14 +653,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     );
   }
 
-  // ============================================================
-  // DONATION BOXES
-  // ============================================================
-
-  // ============================================================
-  // DONATION BOXES (loaded once, refreshed by pull-down)
-  // ============================================================
-
   Future<void> _loadItems() async {
     try {
       final db = FirebaseFirestore.instance;
@@ -686,7 +662,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
           .where('status', isEqualTo: 'available')
           .get();
 
-      // نجيب فقط الصناديق اللي ما عندنا لها نسخة محفوظة
       final newBoxIds = snapshot.docs
           .map((d) => (d.data()['boxId'] ?? '').toString())
           .where((id) => id.isNotEmpty && !_boxCache.containsKey(id))
@@ -756,18 +731,11 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     }
   }
 
-  /// Pull-to-refresh: reloads the items (and the box data) from Firestore.
   Future<void> _onRefresh() async {
     _boxCache.clear();
 
-    // The quota is already listening to Firestore in real time.
-    // Pull-to-refresh only needs to reload the donation items.
     await _loadItems();
   }
-
-  // ============================================================
-  // FILTER
-  // ============================================================
 
   String normalize(String text) {
     return text.replaceAll(" ", "").trim();
@@ -790,10 +758,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     }).toList();
   }
 
-  // ============================================================
-  // BUILD
-  // ============================================================
-
   @override
   Widget build(BuildContext context) {
     final filtered = filteredBoxes;
@@ -801,9 +765,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     return Scaffold(
       backgroundColor: AppDesign.background,
 
-      // ========================================================
-      // BOTTOM NAVIGATION
-      // ========================================================
       bottomNavigationBar: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
         decoration: BoxDecoration(
@@ -845,8 +806,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
                       return;
                     }
 
-                    // إذا لم يكن المستفيد موافقًا عليه:
-                    // الفهرس 1 يعني صفحة المزيد
                     if (!isApproved && index == 1) {
                       setState(() => _bottomNavIndex = 1);
 
@@ -860,7 +819,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
                       return;
                     }
 
-                    // إذا كان المستفيد موافقًا عليه:
                     if (isApproved && index == 1) {
                       setState(() => _bottomNavIndex = 1);
 
@@ -874,7 +832,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
                       return;
                     }
 
-                    // المزيد للمستفيد الموافق عليه، عند الفهرس 2
                     if (isApproved && index == 2) {
                       setState(() => _bottomNavIndex = 2);
 
@@ -911,24 +868,15 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
               ),
       ),
 
-      // ========================================================
-      // BODY
-      // ========================================================
       body: SafeArea(
         child: Column(
           children: [
-            // ==================================================
-            // HEADER
-            // ==================================================
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Directionality(
                 textDirection: TextDirection.rtl,
                 child: Row(
                   children: [
-                    // ==========================================
-                    // USER
-                    // ==========================================
                     CircleAvatar(
                       radius: 24,
                       backgroundColor: AppDesign.primary,
@@ -972,9 +920,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
 
                     const SizedBox(width: 6),
 
-                    // ==========================================
-                    // NOTIFICATIONS
-                    // ==========================================
                     StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                       stream: _notificationsStream(),
                       builder: (context, notificationSnapshot) {
@@ -1046,9 +991,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
                       },
                     ),
 
-                    // ==========================================
-                    // CART
-                    // ==========================================
                     IconButton(
                       onPressed: _openCartIfApproved,
                       icon: Stack(
@@ -1100,9 +1042,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
               ),
             ),
 
-            // ==================================================
-            // BANNER
-            // ==================================================
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Container(
@@ -1143,9 +1082,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
 
             const SizedBox(height: 12),
 
-            // ==================================================
-            // BENEFICIARY QUOTA PROGRESS
-            // ==================================================
             if (beneficiaryStatus == 'approved')
               StreamBuilder<OrderLimits>(
                 stream: _limitsStream,
@@ -1173,9 +1109,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
 
             const SizedBox(height: 12),
 
-            // ==================================================
-            // FILTER TITLE
-            // ==================================================
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Align(
@@ -1192,16 +1125,10 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
 
             const SizedBox(height: 8),
 
-            // ==================================================
-            // FILTERS
-            // ==================================================
             _buildFilters(),
 
             const SizedBox(height: 10),
 
-            // ==================================================
-            // BOXES
-            // ==================================================
             Expanded(
               child: isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -1209,7 +1136,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
                       color: AppDesign.primary,
                       onRefresh: _onRefresh,
                       child: filtered.isEmpty
-                          // Scrollable so pull-down works on the empty state too
                           ? ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: const [
@@ -1255,10 +1181,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
       ),
     );
   }
-
-  // ============================================================
-  // FILTERS
-  // ============================================================
 
   Widget _buildFilters() {
     List<String> genders = ["الكل", "ذكر", "أنثى"];
@@ -1306,10 +1228,6 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
     );
   }
 }
-
-// ================================================================
-// FILTER CARD
-// ================================================================
 
 Widget _filterCard({
   required String title,
@@ -1369,10 +1287,6 @@ Widget _filterCard({
   );
 }
 
-// ================================================================
-// CART COUNT
-// ================================================================
-
 Future<int> _countAvailableCartItems(
   List<QueryDocumentSnapshot> cartDocs,
 ) async {
@@ -1385,7 +1299,6 @@ Future<int> _countAvailableCartItems(
       final itemId = cartData['itemId']?.toString();
 
       if (itemId == null || itemId.isEmpty) {
-        // التوافق مع عناصر السلة القديمة التي كانت تستخدم boxId.
         final boxId = cartData['boxId']?.toString();
         if (boxId == null || boxId.isEmpty) continue;
         final oldBox = await FirebaseFirestore.instance
@@ -1413,10 +1326,6 @@ Future<int> _countAvailableCartItems(
 
   return count;
 }
-
-// ================================================================
-// CLOTHES BOX CARD
-// ================================================================
 
 class ClothesBoxCard extends StatelessWidget {
   final List images;
