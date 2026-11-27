@@ -464,7 +464,6 @@ class _DonorDeliveryPageState extends State<DonorDeliveryPage> {
         final data = boxDoc.data();
         final currentCode = (data['boxCode'] ?? '').toString().trim();
 
-        // New code if none exists, or if it's in the old BOX1-XXXXX format
         final needsNewCode =
             currentCode.isEmpty ||
             RegExp(r'^BOX\d+-[A-Z0-9]+$').hasMatch(currentCode);
