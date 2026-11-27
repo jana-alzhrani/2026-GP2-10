@@ -407,7 +407,7 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        'مستودع مدد - واجهة الرياض',
+                        'واجهة الرياض',
                         style: AppDesign.bodyStyle.copyWith(fontSize: 13),
                       ),
                     ),
