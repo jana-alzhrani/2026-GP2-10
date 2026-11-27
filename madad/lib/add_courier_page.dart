@@ -16,7 +16,6 @@ class _AddCourierPageState extends State<AddCourierPage> {
   final lastNameController = TextEditingController();
   final phoneController = TextEditingController();
 
-  // المدينة الافتراضية
   final cityController = TextEditingController(text: 'Riyadh');
 
   final String status = 'active';
@@ -30,36 +29,6 @@ class _AddCourierPageState extends State<AddCourierPage> {
   String? phoneError;
   String? cityError;
 
-  // =========================
-  // فحص تكرار رقم الجوال
-  // =========================
-  Future<bool> _phoneExists(String phone) async {
-    final normalizedPhone = '+966${phone.substring(1)}';
-    final withoutPlus = normalizedPhone.replaceFirst('+', '');
-
-    final phoneValues = [phone, normalizedPhone, withoutPlus];
-
-    for (final field in ['phone', 'phoneNumber']) {
-      for (final value in phoneValues) {
-        final result = await _firestore
-            .collection('Users')
-            .where(field, isEqualTo: value)
-            .limit(1)
-            .get();
-
-        if (result.docs.isNotEmpty) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
-  // =========================
-  // إضافة السائق
-  // =========================
-
   Future<void> addCourier() async {
     FocusScope.of(context).unfocus();
 
@@ -70,7 +39,6 @@ class _AddCourierPageState extends State<AddCourierPage> {
 
     bool hasError = false;
 
-    // التحقق من جميع الحقول عند الضغط على الزر
     setState(() {
       firstNameError = null;
       lastNameError = null;
@@ -112,7 +80,6 @@ class _AddCourierPageState extends State<AddCourierPage> {
     });
 
     try {
-      // نفحص تكرار الجوال حتى لو كانت الحقول الأخرى فيها أخطاء
       final phoneIsValid = RegExp(r'^05[0-9]{8}$').hasMatch(phone);
 
       if (phoneIsValid) {
@@ -127,16 +94,6 @@ class _AddCourierPageState extends State<AddCourierPage> {
           _firestore
               .collection('Users')
               .where('phone', isEqualTo: normalizedPhone)
-              .limit(1)
-              .get(),
-          _firestore
-              .collection('Users')
-              .where('phoneNumber', isEqualTo: phone)
-              .limit(1)
-              .get(),
-          _firestore
-              .collection('Users')
-              .where('phoneNumber', isEqualTo: normalizedPhone)
               .limit(1)
               .get(),
         ]);
@@ -154,11 +111,8 @@ class _AddCourierPageState extends State<AddCourierPage> {
         }
       }
 
-      // بعد فحص الجوال، نوقف الإضافة إذا بقيت أخطاء أخرى
-      // بعد فحص الجوال، نوقف الإضافة إذا بقيت أخطاء أخرى
       if (hasError) return;
 
-      // نافذة تأكيد إضافة المندوب
       if (!mounted) return;
 
       final confirmed = await AppDesign.showAppDialog(
@@ -169,10 +123,8 @@ class _AddCourierPageState extends State<AddCourierPage> {
         cancelText: 'إلغاء',
       );
 
-      // إذا اختار الإلغاء، لا تتم الإضافة
       if (!confirmed) return;
 
-      final normalizedPhone = '+966${phone.substring(1)}';
       final userRef = _firestore.collection('Users').doc();
       final courierRef = _firestore.collection('couriers').doc();
       final userId = userRef.id;
@@ -216,9 +168,6 @@ class _AddCourierPageState extends State<AddCourierPage> {
     }
   }
 
-  // =========================
-  // تنظيف الحقول
-  // =========================
   @override
   void dispose() {
     firstNameController.dispose();
@@ -229,9 +178,6 @@ class _AddCourierPageState extends State<AddCourierPage> {
     super.dispose();
   }
 
-  // =========================
-  // تصميم الصفحة
-  // =========================
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -329,15 +275,11 @@ class _AddCourierPageState extends State<AddCourierPage> {
     );
   }
 
-  // =========================
-  // تصميم حقول الإدخال
-  // =========================
   Widget _buildField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
     String? errorText,
-    ValueChanged<String>? onChanged,
     TextInputType? keyboardType,
     List<TextInputFormatter>? inputFormatters,
     int? maxLength,
@@ -349,7 +291,6 @@ class _AddCourierPageState extends State<AddCourierPage> {
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       maxLength: maxLength,
-      onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon),
