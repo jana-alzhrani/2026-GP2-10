@@ -46,7 +46,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1066829548492',
     projectId: 'madad-b4ef3',
     authDomain: 'madad-b4ef3.firebaseapp.com',
-    databaseURL: 'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'madad-b4ef3.firebasestorage.app',
     measurementId: 'G-W9SE1TL9TC',
   );
@@ -56,7 +57,8 @@ class DefaultFirebaseOptions {
     appId: '1:1066829548492:android:904ed25dd712257c0bab69',
     messagingSenderId: '1066829548492',
     projectId: 'madad-b4ef3',
-    databaseURL: 'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'madad-b4ef3.firebasestorage.app',
   );
 
@@ -65,7 +67,8 @@ class DefaultFirebaseOptions {
     appId: '1:1066829548492:ios:58db24b5dc4b92880bab69',
     messagingSenderId: '1066829548492',
     projectId: 'madad-b4ef3',
-    databaseURL: 'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'madad-b4ef3.firebasestorage.app',
     iosBundleId: 'com.example.madadApp',
   );
@@ -75,7 +78,8 @@ class DefaultFirebaseOptions {
     appId: '1:1066829548492:ios:58db24b5dc4b92880bab69',
     messagingSenderId: '1066829548492',
     projectId: 'madad-b4ef3',
-    databaseURL: 'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'madad-b4ef3.firebasestorage.app',
     iosBundleId: 'com.example.madadApp',
   );
@@ -86,7 +90,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1066829548492',
     projectId: 'madad-b4ef3',
     authDomain: 'madad-b4ef3.firebaseapp.com',
-    databaseURL: 'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://madad-b4ef3-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'madad-b4ef3.firebasestorage.app',
     measurementId: 'G-JVG2276K69',
   );
