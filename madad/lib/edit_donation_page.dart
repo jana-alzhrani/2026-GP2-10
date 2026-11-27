@@ -1017,18 +1017,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
           'donorId': user.uid,
           'boxNumber': boxNumber,
           'gender': selectedGender,
-          'ageGroup': {
-            'label': selectedAgeGroup!['label'],
-            'min': selectedAgeGroup!['min'],
-            'max': selectedAgeGroup!['max'],
-          },
+          'ageGroup': selectedAgeGroup!['label'],
           'generalSize': generalSize ?? "",
           'itemsCount': items.length,
-          if (boxIsNew) ...{
-            'status': currentStatus,
-            'timestamp': FieldValue.serverTimestamp(),
-          } else
-            'items': FieldValue.delete(),
+          if (boxIsNew) 'status': currentStatus,
         }, SetOptions(merge: true));
 
         for (int i = 0; i < items.length; i++) {
@@ -1062,11 +1054,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
             'imageUrl': up['url'],
             'imagePath': up['path'],
             'description': (e['description'] ?? '').toString(),
-            if (itemIsNew) ...{
-              'status': currentStatus,
-              'createdAt': FieldValue.serverTimestamp(),
-            } else
-              'updatedAt': FieldValue.serverTimestamp(),
+            if (itemIsNew) 'status': currentStatus,
           }, SetOptions(merge: true));
         }
       }
