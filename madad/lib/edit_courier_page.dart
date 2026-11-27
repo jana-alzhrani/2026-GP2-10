@@ -23,7 +23,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
   final lastNameController = TextEditingController();
   final phoneController = TextEditingController();
 
-  // المدينة ثابتة باللغة الإنجليزية
   final cityController = TextEditingController(text: 'Riyadh');
 
   String status = 'active';
@@ -33,13 +32,11 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // رسائل الخطأ
   String? firstNameError;
   String? lastNameError;
   String? phoneError;
   String? cityError;
 
-  // لمنع استخدام نتيجة فحص رقم قديم
   int phoneCheckRequestId = 0;
 
   @override
@@ -48,9 +45,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
     loadCourier();
   }
 
-  // =========================
-  // تحميل بيانات المندوب
-  // =========================
   Future<void> loadCourier() async {
     try {
       final userDoc = await _firestore
@@ -81,12 +75,10 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
       phoneController.text = userData['phone']?.toString() ?? '';
 
-      // تحويل الرقم الدولي إلى الصيغة المحلية
       if (phoneController.text.startsWith('+966')) {
         phoneController.text = '0${phoneController.text.substring(4)}';
       }
 
-      // المدينة دائمًا Riyadh
       cityController.text = 'Riyadh';
 
       status = courierData['status']?.toString() ?? 'active';
@@ -109,9 +101,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
     }
   }
 
-  // =========================
-  // التحقق من رقم الجوال
-  // =========================
   Future<void> checkPhoneExists(String value) async {
     final phone = value.trim();
     final requestId = ++phoneCheckRequestId;
@@ -159,9 +148,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
     }
   }
 
-  // =========================
-  // حفظ التعديلات
-  // =========================
   Future<void> updateCourier() async {
     FocusScope.of(context).unfocus();
 
@@ -169,7 +155,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
     final lastName = lastNameController.text.trim();
     final phone = phoneController.text.trim();
 
-    // المدينة ثابتة دائمًا
     const city = 'Riyadh';
 
     bool hasError = false;
@@ -180,7 +165,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
       phoneError = null;
       cityError = null;
 
-      // الاسم الأول
       if (firstName.isEmpty) {
         firstNameError = 'الرجاء تعبئة الحقل';
         hasError = true;
@@ -189,7 +173,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
         hasError = true;
       }
 
-      // اسم العائلة
       if (lastName.isEmpty) {
         lastNameError = 'الرجاء تعبئة الحقل';
         hasError = true;
@@ -198,7 +181,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
         hasError = true;
       }
 
-      // رقم الجوال
       if (phone.isEmpty) {
         phoneError = 'الرجاء تعبئة الحقل';
         hasError = true;
@@ -215,7 +197,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
     });
 
     try {
-      // إعادة فحص رقم الجوال قبل الحفظ
       final phoneCheck = await _firestore
           .collection('Users')
           .where('phone', isEqualTo: phone)
@@ -236,7 +217,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
         return;
       }
 
-      // تأكيد حفظ التعديلات
       if (!mounted) return;
 
       final confirmed = await AppDesign.showAppDialog(
@@ -258,7 +238,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
       if (!mounted) return;
 
-      // تحديث بيانات المستخدم والمندوب
       final batch = _firestore.batch();
 
       final userRef = _firestore.collection('Users').doc(widget.userId);
@@ -297,9 +276,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
     }
   }
 
-  // =========================
-  // تنظيف الحقول
-  // =========================
   @override
   void dispose() {
     firstNameController.dispose();
@@ -310,9 +286,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
     super.dispose();
   }
 
-  // =========================
-  // تصميم الصفحة
-  // =========================
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -351,7 +324,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
                 padding: AppPadding.screen,
                 child: Column(
                   children: [
-                    // الاسم الأول
                     _buildField(
                       controller: firstNameController,
                       label: 'الاسم الأول',
@@ -375,7 +347,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
                     AppGap.md,
 
-                    // اسم العائلة
                     _buildField(
                       controller: lastNameController,
                       label: 'اسم العائلة',
@@ -398,7 +369,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
                     AppGap.md,
 
-                    // رقم الجوال
                     _buildField(
                       controller: phoneController,
                       label: 'رقم الجوال',
@@ -414,7 +384,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
                     AppGap.md,
 
-                    // المدينة ثابتة على Riyadh
                     _buildField(
                       controller: cityController,
                       label: 'المدينة',
@@ -424,7 +393,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
                     AppGap.md,
 
-                    // الحالة
                     DropdownButtonFormField<String>(
                       value: status,
                       decoration: const InputDecoration(
@@ -452,7 +420,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
                     AppGap.lg,
 
-                    // زر حفظ التعديلات
                     SizedBox(
                       width: double.infinity,
                       height: 55,
@@ -476,9 +443,6 @@ class _EditCourierPageState extends State<EditCourierPage> {
     );
   }
 
-  // =========================
-  // تصميم حقول الإدخال
-  // =========================
   Widget _buildField({
     required TextEditingController controller,
     required String label,
