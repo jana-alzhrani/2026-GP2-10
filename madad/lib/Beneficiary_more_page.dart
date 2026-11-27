@@ -113,7 +113,6 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
     }
   }
 
-  // ───────────────────────── تعديل البيانات ─────────────────────────
   Future<void> _showEditNameSheet() async {
     final result = await showModalBottomSheet<Map<String, String>>(
       context: context,
@@ -227,7 +226,7 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
                 ),
               ),
               const SizedBox(width: 8),
-              // زر تعديل
+
               InkWell(
                 onTap: _showEditNameSheet,
                 borderRadius: BorderRadius.circular(20),
@@ -386,7 +385,6 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
           Divider(color: AppDesign.border),
           const SizedBox(height: 20),
 
-          // ===== الموقع =====
           Row(
             textDirection: TextDirection.rtl,
             children: [
@@ -461,7 +459,6 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
           Divider(color: AppDesign.border),
           const SizedBox(height: 20),
 
-          // ===== ساعات العمل =====
           Row(
             children: [
               _circleIcon(Icons.access_time_rounded),
@@ -548,8 +545,6 @@ class _BeneficiaryMorePageState extends State<BeneficiaryMorePage> {
   }
 
   Widget _buildBottomNavigationBar() {
-    // لا نعرض شريطًا مؤقتًا بخيارين قبل اكتمال قراءة حالة المستفيد.
-    // ننتظر نتيجة Firestore حتى يظهر شريط التنقل الصحيح من أول مرة.
     if (!_approvalStatusLoaded) {
       return Container(
         height: 78,
