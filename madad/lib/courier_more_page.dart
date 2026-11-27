@@ -348,7 +348,7 @@ class _CourierMorePageState extends State<CourierMorePage> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        'مستودع مدد - واجهة الرياض',
+                        ' واجهة الرياض',
                         style: AppDesign.bodyStyle.copyWith(fontSize: 13),
                       ),
                     ),
