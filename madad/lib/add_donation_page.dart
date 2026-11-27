@@ -120,6 +120,16 @@ class _AddDonationPageState extends State<AddDonationPage> {
       return;
     }
 
+    if (parsed <= 0) {
+      setState(() {
+        itemCountError = "أدخل عددًا أكبر من صفر";
+        totalItems = 0;
+        totalBoxes = 0;
+        boxes = {};
+      });
+      return;
+    }
+
     totalItems = parsed;
     totalBoxes = (totalItems / 5).ceil();
 
@@ -670,11 +680,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
         'donorId': user.uid,
         'boxNumber': box,
         'gender': selectedGender,
-        'ageGroup': selectedAgeGroup,
+        'ageGroup': selectedAgeGroup!['label'],
         'generalSize': generalSize,
         'status': 'draft',
         'itemsCount': items.length,
-        'timestamp': FieldValue.serverTimestamp(),
       });
 
       final List<Map<String, dynamic>> toEmbed = [];
@@ -699,7 +708,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
           'imagePath': uploads[i]['path'],
           'description': (items[i]['description'] ?? '').toString(),
           'status': 'draft',
-          'createdAt': FieldValue.serverTimestamp(),
         });
       }
 
