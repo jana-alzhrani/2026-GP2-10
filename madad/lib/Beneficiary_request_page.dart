@@ -6,29 +6,21 @@ import 'Beneficiary_more_page.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'request_items_helper.dart';
 
-/// ─────────────── إعدادات قاعدة البيانات ───────────────
 const String kRequestsCollection = 'requests';
 const String kBoxesCollection = 'donation_boxes';
 
-/// الحقل الذي يربط الطلب بالمستفيد
 const String kBeneficiaryIdField = 'beneficiaryId';
 
-/// الحقل داخل donation_boxes الذي يربط الصندوق بالطلب (عدّله حسب قاعدتك)
 const String kBoxRequestIdField = 'requestId';
 
-/// حالات الطلبات التي تظهر في تبويب "الطلبات النشطة"
 const List<String> kActiveStatuses = ['requested', 'reserved', 'delivered'];
 
-/// الحالة المكتملة (تُستخدم في كل الملف)
 const String kCompletedStatus = 'completed';
 
-/// حالات الطلبات التي تظهر في تبويب "الطلبات السابقة"
 const List<String> kPreviousStatuses = [kCompletedStatus];
 
 const Map<String, String> kStatusLabels = {
   'requested': 'تم الطلب',
-  'reserved': 'تم الحجز',
-  'delivered': 'جاري التوصيل',
   'completed': 'تم الاستلام',
 };
 
@@ -58,7 +50,6 @@ String _fmtDate(DateTime? d) {
   return '${l.year}/${two(l.month)}/${two(l.day)}  ${two(l.hour)}:${two(l.minute)}';
 }
 
-/// ═══════════════════════════ الصفحة ═══════════════════════════
 class BeneficiaryOrdersPage extends StatefulWidget {
   final String userId;
 
@@ -118,8 +109,6 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
         );
   }
 
-  /// 0 = الطلبات النشطة
-  /// 1 = الطلبات السابقة
   int _tabIndex = 0;
 
   @override
@@ -159,7 +148,6 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
     );
   }
 
-  // ───────────────────────── الهيدر ─────────────────────────
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -183,7 +171,6 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
     );
   }
 
-  // ───────────────────────── التبويبات ─────────────────────────
   Widget _buildTabs() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -237,11 +224,9 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
     );
   }
 
-  // ───────────────────────── قائمة الطلبات ─────────────────────────
   Widget _buildRequestsList() {
     final isActiveTab = _tabIndex == 0;
 
-    /// جلب الطلبات الخاصة بالمستفيد الحالي من كولكشن requests
     final Query<Map<String, dynamic>> query = FirebaseFirestore.instance
         .collection(kRequestsCollection)
         .where(kBeneficiaryIdField, isEqualTo: widget.userId)
@@ -263,7 +248,6 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
 
         final docs = [...?snapshot.data?.docs];
 
-        // ترتيب الأحدث أولاً
         docs.sort((a, b) {
           final da = _toDate(a.data()['createdAt']);
           final db = _toDate(b.data()['createdAt']);
@@ -274,7 +258,6 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
           return 0;
         });
 
-        // لا توجد طلبات
         if (docs.isEmpty) {
           return Center(
             child: Column(
@@ -318,7 +301,6 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
     );
   }
 
-  // ───────────────────────── البوتوم ناف ─────────────────────────
   Widget _buildBottomNav() {
     final destinations = <NavigationDestination>[
       const NavigationDestination(
@@ -384,7 +366,6 @@ class _BeneficiaryOrdersPageState extends State<BeneficiaryOrdersPage> {
   }
 }
 
-/// ═══════════════════════════ كارد الطلب ═══════════════════════════
 class OrderCard extends StatefulWidget {
   final String requestId;
   final Map<String, dynamic> data;
@@ -396,7 +377,6 @@ class OrderCard extends StatefulWidget {
 }
 
 class _OrderCardState extends State<OrderCard> {
-  /// نُنشئ الـ Future مرة واحدة بدل إنشائه في كل build
   late Future<List<Map<String, dynamic>>> _itemsFuture;
 
   @override
@@ -408,7 +388,7 @@ class _OrderCardState extends State<OrderCard> {
   @override
   void didUpdateWidget(covariant OrderCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // نعيد الجلب فقط عند تغيّر الطلب أو حالته (مثلاً بعد مسح الباركود)
+
     if (oldWidget.requestId != widget.requestId ||
         oldWidget.data['status'] != widget.data['status']) {
       _itemsFuture = fetchRequestItems(widget.requestId);
@@ -435,7 +415,6 @@ class _OrderCardState extends State<OrderCard> {
         ? requestId
         : requestId.substring(0, 8);
 
-    // زر المسح يظهر فقط للاستلام من المستودع وقبل اكتمال الطلب
     final canScan = method == 'pickup' && status != kCompletedStatus;
 
     return Container(
@@ -451,7 +430,6 @@ class _OrderCardState extends State<OrderCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ─── العنوان + الحالة + الأيقونة ───
           Row(
             children: [
               Expanded(
@@ -487,7 +465,6 @@ class _OrderCardState extends State<OrderCard> {
 
           const SizedBox(height: 14),
 
-          // ─── معلومات الطلب ───
           _InfoBox(
             children: [
               if (createdAt != null)
@@ -538,7 +515,6 @@ class _OrderCardState extends State<OrderCard> {
                   value: warehouseName,
                 ),
 
-              // المدينة والحي: يظهران فقط إذا الطلب توصيل
               if (method == 'delivery' && city.isNotEmpty)
                 _InfoRow(
                   icon: Icons.location_city_outlined,
@@ -554,7 +530,6 @@ class _OrderCardState extends State<OrderCard> {
             ],
           ),
 
-          // ─── الصناديق المرتبطة بالطلب (إن وجدت) ───
           FutureBuilder<List<Map<String, dynamic>>>(
             future: _itemsFuture,
             builder: (context, snap) {
@@ -589,7 +564,6 @@ class _OrderCardState extends State<OrderCard> {
   }
 }
 
-/// ═══════════════════════════ صندوق معلومات ═══════════════════════════
 class _InfoBox extends StatelessWidget {
   final List<Widget> children;
 
@@ -652,7 +626,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-/// ═══════════════════════════ شارة الحالة ═══════════════════════════
 class _StatusChip extends StatelessWidget {
   final String label;
 
@@ -678,10 +651,6 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-/// ═══════════════════════════ صفحة مسح الباركود (تأكيد الاستلام) ═══════════════════════════
-/// الباركود يحمل قيمة requestId الكاملة.
-/// عند التطابق: القطع والصناديق -> delivered، والطلب -> completed.
-/// ترجع true عند نجاح الاستلام.
 class PickupScanPage extends StatefulWidget {
   final String requestId;
 
@@ -761,7 +730,6 @@ class _PickupScanPageState extends State<PickupScanPage> {
     setState(() => _busy = true);
 
     try {
-      // 1) الباركود لازم يطابق requestId
       if (_normalize(raw) != _normalize(widget.requestId)) {
         debugPrint('SCANNED: "$raw" | REQUEST: "${widget.requestId}"');
         _toast('هذا الباركود لا يخص طلبك', error: true);
@@ -775,7 +743,6 @@ class _PickupScanPageState extends State<PickupScanPage> {
           .collection(kRequestsCollection)
           .doc(widget.requestId);
 
-      // 2) تأكد أن الطلب لم يكتمل
       final requestSnap = await requestRef.get();
       if (requestSnap.data()?['status'] == kCompletedStatus) {
         _toast('تم استلام هذا الطلب مسبقاً', error: true);
@@ -784,7 +751,6 @@ class _PickupScanPageState extends State<PickupScanPage> {
         return;
       }
 
-      // 3) قطع الطلب
       final itemsSnap = await db
           .collection('items')
           .where('requestId', isEqualTo: widget.requestId)
@@ -792,12 +758,10 @@ class _PickupScanPageState extends State<PickupScanPage> {
 
       final batch = db.batch();
 
-      // 4) القطع -> delivered
       for (final itemDoc in itemsSnap.docs) {
         batch.update(itemDoc.reference, {'status': 'delivered'});
       }
 
-      // 5) الصناديق -> delivered
       final boxIds = itemsSnap.docs
           .map((d) => (d.data()['boxId'] ?? '').toString().trim())
           .where((id) => id.isNotEmpty)
@@ -809,42 +773,64 @@ class _PickupScanPageState extends State<PickupScanPage> {
         });
       }
 
-      // 6) الطلب -> completed
       batch.update(requestRef, {
         'status': kCompletedStatus,
         'deliveredAt': FieldValue.serverTimestamp(),
       });
 
-      // 7) التبرعات اللي كل قطعها صارت مستلمة
       final currentIds = itemsSnap.docs.map((d) => d.id).toSet();
       final donationIds = itemsSnap.docs
           .map((d) => (d.data()['donationId'] ?? '').toString().trim())
           .where((id) => id.isNotEmpty)
           .toSet();
 
+      await batch.commit();
+
       for (final donationId in donationIds) {
-        final donationRef = db.collection('donations').doc(donationId);
-        final donationSnap = await donationRef.get();
-        if (!donationSnap.exists) continue;
+        try {
+          final siblings = await db
+              .collection('items')
+              .where('donationId', isEqualTo: donationId)
+              .get();
 
-        final siblings = await db
-            .collection('items')
-            .where('donationId', isEqualTo: donationId)
-            .get();
+          if (siblings.docs.isEmpty) continue;
 
-        final allDelivered = siblings.docs.every(
-          (i) => currentIds.contains(i.id) || i.data()['status'] == 'delivered',
-        );
+          final boxes = await db
+              .collection(kBoxesCollection)
+              .where('donationId', isEqualTo: donationId)
+              .get();
 
-        if (allDelivered) {
-          batch.update(donationRef, {
-            'status': 'delivered',
-            'deliveredAt': FieldValue.serverTimestamp(),
+          final totalItems = boxes.docs.fold<int>(
+            0,
+            (sum, b) => sum + ((b.data()['itemsCount'] as num?)?.toInt() ?? 0),
+          );
+
+          final deliveredCount = siblings.docs
+              .where(
+                (i) =>
+                    currentIds.contains(i.id) ||
+                    i.data()['status'] == 'delivered',
+              )
+              .length;
+
+          final newCount = deliveredCount > totalItems
+              ? totalItems
+              : deliveredCount;
+
+          final allDelivered =
+              totalItems > 0 &&
+              deliveredCount == siblings.docs.length &&
+              newCount == totalItems;
+
+          await db.collection('donations').doc(donationId).update({
+            'deliveredItemsCount': newCount,
+            if (allDelivered) 'status': 'delivered',
+            if (allDelivered) 'deliveredAt': FieldValue.serverTimestamp(),
           });
+        } catch (e) {
+          debugPrint('DONATION PROGRESS ERROR ($donationId): $e');
         }
       }
-
-      await batch.commit();
 
       if (!mounted) return;
       await _showSuccessDialog('تم استلام الطلب بنجاح');
@@ -891,7 +877,7 @@ class _PickupScanPageState extends State<PickupScanPage> {
                 ),
               ),
             ),
-            // إطار التوجيه
+
             Center(
               child: Container(
                 width: 260,
