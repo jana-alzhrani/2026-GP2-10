@@ -86,9 +86,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
     }
   }
 
-  // ============================================================
-  // NOTIFICATIONS
-  // ============================================================
   Future<void> _showNoNotifications() async {
     await showGeneralDialog<void>(
       context: context,
@@ -433,10 +430,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
     );
   }
 
-  // ============================================================
-  // ACTIONS
-  // ============================================================
-
   Future _completeDonationTask(String donationId, String originalStatus) async {
     final confirm = await AppDesign.showAppDialog(
       context: context,
@@ -464,20 +457,15 @@ class _CourierHomePageState extends State<CourierHomePage> {
         batch.update(boxDoc.reference, {'status': 'available'});
       }
 
-      // وصلت المستودع: القطع تصير متاحة للمستفيدين
       for (final itemDoc in itemsSnapshot.docs) {
         batch.update(itemDoc.reference, {'status': 'available'});
       }
-
-      final targetDonationStatus = (originalStatus == 'published')
-          ? 'available'
-          : 'delivered';
 
       final donationRef = FirebaseFirestore.instance
           .collection('donations')
           .doc(donationId);
       batch.update(donationRef, {
-        'status': targetDonationStatus,
+        'status': 'available',
         'courierTaskStatus': 'completed',
         'deliveredAt': FieldValue.serverTimestamp(),
       });
@@ -506,7 +494,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
     try {
       final firestore = FirebaseFirestore.instance;
 
-      // 1. Verify that the request exists.
       final requestRef = firestore.collection('requests').doc(requestId);
       final requestDoc = await requestRef.get();
 
@@ -514,7 +501,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
         throw Exception('مستند طلب المستفيد غير موجود');
       }
 
-      // 2. Get all items directly linked to this request.
       final itemsSnapshot = await firestore
           .collection('items')
           .where('requestId', isEqualTo: requestId)
@@ -542,7 +528,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
         }
       }
 
-      // 3. Check donation documents before updating them.
       final Map<String, DocumentSnapshot> donationDocs = {};
 
       for (final donationId in donationIds) {
@@ -558,7 +543,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
         }
       }
 
-      // 4. Prepare batch updates.
       final batch = firestore.batch();
 
       for (final itemDoc in itemsSnapshot.docs) {
@@ -571,8 +555,8 @@ class _CourierHomePageState extends State<CourierHomePage> {
         'deliveredAt': FieldValue.serverTimestamp(),
       });
 
-      // 5. Update donations only if their documents exist
-      // and all their items have been delivered.
+      final progressUpdates = <DocumentReference, Map<String, dynamic>>{};
+
       for (final donationId in donationIds) {
         final donationDoc = donationDocs[donationId]!;
 
@@ -583,25 +567,47 @@ class _CourierHomePageState extends State<CourierHomePage> {
             .where('donationId', isEqualTo: donationId)
             .get();
 
-        final allDelivered = siblings.docs.every((item) {
+        final deliveredCount = siblings.docs.where((item) {
           final isPartOfCurrentRequest = itemsSnapshot.docs.any(
             (current) => current.id == item.id,
           );
 
           return isPartOfCurrentRequest || item.data()['status'] == 'delivered';
-        });
+        }).length;
 
-        if (allDelivered) {
-          batch.update(donationDoc.reference, {
-            'status': 'delivered',
-            'courierTaskStatus': 'completed',
-            'deliveredAt': FieldValue.serverTimestamp(),
-          });
-        }
+        final donationData =
+            donationDoc.data() as Map<String, dynamic>? ?? <String, dynamic>{};
+        final totalItems =
+            (donationData['numberOfItems'] as num?)?.toInt() ?? 0;
+        final previousCount =
+            (donationData['deliveredItemsCount'] as num?)?.toInt() ?? 0;
+        final newCount = deliveredCount > totalItems
+            ? totalItems
+            : deliveredCount;
+
+        if (newCount < previousCount) continue;
+
+        final allDelivered =
+            totalItems > 0 &&
+            deliveredCount == siblings.docs.length &&
+            newCount == totalItems;
+
+        progressUpdates[donationDoc.reference] = {
+          'deliveredItemsCount': newCount,
+          if (allDelivered) 'status': 'delivered',
+          if (allDelivered) 'deliveredAt': FieldValue.serverTimestamp(),
+        };
       }
 
-      // 6. Commit all changes.
       await batch.commit();
+
+      for (final entry in progressUpdates.entries) {
+        try {
+          await entry.key.update(entry.value);
+        } catch (e) {
+          debugPrint('Donation progress update error: $e');
+        }
+      }
 
       if (!mounted) return;
 
@@ -620,9 +626,8 @@ class _CourierHomePageState extends State<CourierHomePage> {
     }
   }
 
-  /// التخلي عن المهمة: تظهر فوراً لباقي المناديب
   Future<void> _releaseTask({
-    required String collection, // 'donations' or 'requests'
+    required String collection,
     required String id,
   }) async {
     final confirm = await AppDesign.showAppDialog(
@@ -638,7 +643,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
       final db = FirebaseFirestore.instance;
       final ref = db.collection(collection).doc(id);
 
-      // قبول مهمة التبرع يكتب courierId على الصناديق، فنشيله منها أيضاً
       final boxes = collection == 'donations'
           ? await db
                 .collection('donation_boxes')
@@ -650,7 +654,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
         final snap = await tx.get(ref);
         final data = snap.data();
 
-        // فقط المندوب صاحب المهمة يقدر يتخلى عنها
         if (data?['courierId']?.toString() != widget.userId) return false;
         if (data?['courierTaskStatus'] == 'completed') return false;
 
@@ -684,10 +687,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
       AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء التخلي عن المهمة');
     }
   }
-
-  // ============================================================
-  // HELPERS
-  // ============================================================
 
   Future<DocumentSnapshot?> _userDoc(String id) async {
     if (id.isEmpty || id == '-') return null;
@@ -751,10 +750,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
       ),
     );
   }
-
-  // ============================================================
-  // BUILD
-  // ============================================================
 
   @override
   Widget build(BuildContext context) {
@@ -887,9 +882,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
 
                   const SizedBox(width: 6),
 
-                  // ==========================================
-                  // NOTIFICATIONS
-                  // ==========================================
                   StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: _notificationsStream(),
                     builder: (context, notificationSnapshot) {
@@ -1030,7 +1022,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
               ),
               const SizedBox(height: 12),
 
-              // عرض التبرعات وطلبات المستفيدين النشطة المسندة للمندوب
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('donations')
@@ -1064,14 +1055,12 @@ class _CourierHomePageState extends State<CourierHomePage> {
                       final donationDocs = donationsSnap.data?.docs ?? [];
                       final requestDocs = requestsSnap.data?.docs ?? [];
 
-                      // تصفية التبرعات النشطة (غير المكتملة)
                       final activeDonations = donationDocs.where((doc) {
                         final data = doc.data() as Map;
                         final status = data['status'] ?? '';
                         return status != 'delivered' && status != 'available';
                       }).toList();
 
-                      // تصفية طلبات المستفيدين النشطة (غير المكتملة)
                       final activeRequests = requestDocs.where((doc) {
                         final data = doc.data() as Map;
                         final status = data['status'] ?? '';
@@ -1090,7 +1079,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
                         );
                       }
 
-                      // دمج التبرعات والطلبات: الأحدث أولاً
                       final entries = <_TaskEntry>[
                         for (final d in activeDonations) _TaskEntry(true, d),
                         for (final r in activeRequests) _TaskEntry(false, r),
@@ -1114,14 +1102,9 @@ class _CourierHomePageState extends State<CourierHomePage> {
     );
   }
 
-  // ============================================================
-  // DONATION TASK CARD
-  // ============================================================
-
   Widget _buildDonationCard(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    // قراءة العنوان من الخريطة pickupAddress حسب هيكل قاعدة البيانات
     final pickupAddressMap = data['pickupAddress'];
     final rawCity = pickupAddressMap is Map
         ? (pickupAddressMap['city'] ?? '').toString().trim()
@@ -1301,10 +1284,6 @@ class _CourierHomePageState extends State<CourierHomePage> {
       },
     );
   }
-
-  // ============================================================
-  // BENEFICIARY REQUEST TASK CARD
-  // ============================================================
 
   Widget _buildRequestCard(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
