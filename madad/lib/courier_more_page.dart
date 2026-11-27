@@ -52,7 +52,6 @@ class _CourierMorePageState extends State<CourierMorePage> {
     }
   }
 
-  // ───────────────────────── تعديل البيانات ─────────────────────────
   Future<void> _showEditNameSheet() async {
     final result = await showModalBottomSheet<Map<String, String>>(
       context: context,
@@ -169,7 +168,6 @@ class _CourierMorePageState extends State<CourierMorePage> {
                 ),
               ),
               const SizedBox(width: 8),
-              // زر تعديل
               InkWell(
                 onTap: _showEditNameSheet,
                 borderRadius: BorderRadius.circular(20),
@@ -328,7 +326,6 @@ class _CourierMorePageState extends State<CourierMorePage> {
           Divider(color: AppDesign.border),
           const SizedBox(height: 20),
 
-          // ===== الموقع =====
           Row(
             textDirection: TextDirection.rtl,
             children: [
@@ -403,7 +400,6 @@ class _CourierMorePageState extends State<CourierMorePage> {
           Divider(color: AppDesign.border),
           const SizedBox(height: 20),
 
-          // ===== ساعات العمل =====
           Row(
             children: [
               _circleIcon(Icons.access_time_rounded),
