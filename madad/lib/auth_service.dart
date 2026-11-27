@@ -37,13 +37,13 @@ class PhoneUtils {
 class AppAccount {
   final String userId;
   final String role;
-  final String status;
+  final bool isDeleted;
   final Map<String, dynamic> data;
 
   const AppAccount({
     required this.userId,
     required this.role,
-    required this.status,
+    required this.isDeleted,
     required this.data,
   });
 
@@ -52,16 +52,13 @@ class AppAccount {
     return AppAccount(
       userId: doc.id,
       role: (data['role'] ?? '').toString().trim().toLowerCase(),
-      status: (data['status'] ?? '').toString().trim().toLowerCase(),
+      isDeleted: false,
       data: data,
     );
   }
 
-  bool get isDeleted => status == 'deleted';
-}
-
-class AccountLinkedElsewhereException implements Exception {
-  const AccountLinkedElsewhereException();
+  AppAccount markDeleted(bool deleted) =>
+      AppAccount(userId: userId, role: role, isDeleted: deleted, data: data);
 }
 
 class AuthService {
@@ -101,51 +98,73 @@ class AuthService {
     final user = _auth.currentUser;
     if (user == null) return null;
 
-    final linkDoc = await _db.collection('authLinks').doc(user.uid).get();
-    if (linkDoc.exists) {
-      final linkedId = (linkDoc.data()?['userId'] ?? '').toString();
-      if (linkedId.isNotEmpty) {
-        final linkedUser = await _users.doc(linkedId).get();
-        if (linkedUser.exists) return AppAccount.fromDoc(linkedUser);
-      }
-    }
+    final account = await _findAccount(user);
+    if (account == null || account.isDeleted) return account;
 
+    return account.markDeleted(await _isDeleted(account));
+  }
+
+  static Future<AppAccount?> _findAccount(User user) async {
     final ownDoc = await _users.doc(user.uid).get();
     if (ownDoc.exists) return AppAccount.fromDoc(ownDoc);
 
     final authPhone = user.phoneNumber;
     if (authPhone == null || authPhone.isEmpty) return null;
 
-    final candidates = {
-      PhoneUtils.toLocal(authPhone),
-      PhoneUtils.toInternational(authPhone),
+    final invites = _db.collection('couriers');
+    final inviteRef = invites.doc(PhoneUtils.toLocal(authPhone));
+    final invite = await inviteRef.get();
+    if (!invite.exists) return null;
+
+    final data = invite.data() ?? <String, dynamic>{};
+    final userData = {
+      'firstName': (data['firstName'] ?? '').toString(),
+      'lastName': (data['lastName'] ?? '').toString(),
+      'phone': (data['phone'] ?? '').toString(),
+      'role': 'courier',
     };
+    final account = AppAccount(
+      userId: user.uid,
+      role: 'courier',
+      isDeleted: false,
+      data: userData,
+    );
 
-    for (final value in candidates) {
-      final match = await _users
-          .where('phone', isEqualTo: value)
-          .limit(1)
-          .get();
-      if (match.docs.isEmpty) continue;
-
-      final account = AppAccount.fromDoc(match.docs.first);
-
-      if (account.role != 'courier' && account.role != 'admin') {
-        throw const AccountLinkedElsewhereException();
-      }
-
-      if (!account.isDeleted) {
-        await _db.collection('authLinks').doc(user.uid).set({
-          'userId': account.userId,
-          'role': account.role,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      return account;
+    if ((data['status'] ?? '').toString().trim().toLowerCase() == 'deleted') {
+      return account.markDeleted(true);
     }
 
-    return null;
+    final batch = _db.batch();
+    batch.set(_users.doc(user.uid), userData);
+    batch.set(invites.doc(user.uid), {
+      'userID': user.uid,
+      'status': (data['status'] ?? 'active').toString(),
+      'city': (data['city'] ?? '').toString(),
+      'completedDeliveries': 0,
+    });
+    batch.delete(inviteRef);
+    await batch.commit();
+
+    return account;
+  }
+
+  static Future<bool> _isDeleted(AppAccount account) async {
+    if (account.role == 'beneficiary') {
+      final doc = await _db
+          .collection('beneficiaries')
+          .doc(account.userId)
+          .get();
+      return (doc.data()?['status'] ?? '').toString().trim().toLowerCase() ==
+          'deleted';
+    }
+
+    if (account.role == 'courier') {
+      final doc = await _db.collection('couriers').doc(account.userId).get();
+      return (doc.data()?['status'] ?? '').toString().trim().toLowerCase() ==
+          'deleted';
+    }
+
+    return false;
   }
 
   static Widget? homeFor(AppAccount account) {
@@ -171,4 +190,3 @@ class AuthService {
     }
   }
 }
-
