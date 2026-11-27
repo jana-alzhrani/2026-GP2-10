@@ -35,9 +35,6 @@ class _AuthGateState extends State<AuthGate> {
       }
 
       return home;
-    } on AccountLinkedElsewhereException {
-      await AuthService.signOut();
-      return const WelcomePage();
     } catch (e) {
       debugPrint("AuthGate Error: $e");
       return const WelcomePage();
