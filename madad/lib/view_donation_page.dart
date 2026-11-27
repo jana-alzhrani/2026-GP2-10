@@ -107,7 +107,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
       case 'available':
         return Icons.inventory_2_outlined;
       case 'reserved':
-        return Icons.assignment_turned_in_outlined; // تم الطلب
+        return Icons.assignment_turned_in_outlined;
       case 'delivered':
         return Icons.local_shipping_outlined;
       default:
@@ -115,10 +115,8 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     }
   }
 
-  /// لون الحالة: مصدر واحد لكل المستويات (تبرع / صندوق / قطعة)
   Color getBoxStatusColor(String status) => AppDesign.primary;
 
-  /// شارة حالة موحّدة (نفس الألوان والشكل في كل مكان)
   Widget _statusPill(String status, {bool compact = true}) {
     final fg = _statusTextColor(status);
     return Container(
@@ -194,7 +192,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                 size: 20,
               ),
               const SizedBox(width: 8),
-              // Wrap: إذا ما كفى العرض، القيمة تنزل سطر جديد بدل ما تنضغط
+
               Expanded(
                 child: Wrap(
                   spacing: 10,
@@ -224,7 +222,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     );
   }
 
-  /// زر مسح الباركود لتأكيد التسليم للمستودع (بعرض كامل، يتكيف مع الشاشة)
   Widget _scanSquareButton(String donationId) {
     return Material(
       color: AppDesign.primary,
@@ -308,7 +305,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
         return;
       }
 
-      // حذف القطع (كولكشن items)
       final itemsSnapshot = await FirebaseFirestore.instance
           .collection('items')
           .where('donationId', isEqualTo: docId)
@@ -318,7 +314,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
         await itemDoc.reference.delete();
       }
 
-      // حذف الصناديق
       final boxesSnapshot = await FirebaseFirestore.instance
           .collection('donation_boxes')
           .where('donationId', isEqualTo: docId)
@@ -358,13 +353,10 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     if (confirm != true) return;
 
     try {
-      // تحديث التاريخ والحالة في Firestore قبل الانتقال لصفحة التوصيل
       await FirebaseFirestore.instance
           .collection('donations')
           .doc(docId)
-          .update({
-            'updatedAt': FieldValue.serverTimestamp(), // تحديث وقت التأكيد
-          });
+          .update({'updatedAt': FieldValue.serverTimestamp()});
 
       if (!mounted) return;
 
@@ -493,7 +485,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     await Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }
 
-  /// هل الصندوق لسا ما تم تسليمه للمستودع؟
   bool _boxNeedsDropoff(Map<String, dynamic> data) {
     final s = (data['status'] ?? '').toString().toLowerCase();
     return s != 'available' &&
@@ -503,10 +494,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
         s != 'draft';
   }
 
-  // ============================================================
-  // قطع الصندوق (من كولكشن items، مع دعم الطريقة القديمة)
-  // ============================================================
-
   Widget _buildBoxItems(
     QueryDocumentSnapshot box, {
     bool showItemStatus = true,
@@ -514,7 +501,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     final bData = box.data() as Map<String, dynamic>;
     final legacy = bData['items'];
 
-    // دعم الصناديق القديمة اللي القطع فيها داخل array
     if (legacy is List && legacy.isNotEmpty) {
       final list = legacy
           .map((e) => Map<String, dynamic>.from(e as Map))
@@ -544,7 +530,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
         final docs = [...(snap.data?.docs ?? [])];
 
-        // ترتيب محلي عشان ما نحتاج index في Firestore
         docs.sort((a, b) {
           final an =
               ((a.data() as Map<String, dynamic>)['itemNumber'] ?? 0) as num;
@@ -594,7 +579,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                /// 🖼️ صورة القطعة
                 imageUrl.isNotEmpty
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(AppDesign.radiusSM),
@@ -644,7 +628,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                   ),
                 ),
 
-                /// حالة القطعة (يسار الكارد)
                 if (showStatus && itemStatus.isNotEmpty) ...[
                   AppGap.wMD,
                   SizedBox(
@@ -677,7 +660,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     );
   }
 
-  /// تحسب من حالات الأيتم: هل كل صندوق تم تسليمه؟ وهل التبرع كامل تم تسليمه؟
   Widget _withDeliveryInfo({
     required String donationId,
     required Widget Function(
@@ -747,7 +729,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
     final data = doc.data() as Map<String, dynamic>;
     final status = (data['status'] ?? '').toString();
 
-    // المسودات بدون أي تغيير
     if (_isDraftStatus(status)) {
       return _buildDonationCardContent(doc, false, const {});
     }
@@ -768,7 +749,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
     final String gender = (data['gender'] ?? '-').toString();
     final String ageGroup = (data['ageGroup'] ?? '-').toString();
-    // للعنوان فقط: نشيل الأقواس من الفئة العمرية عشان ما تتداخل
+
     final String ageGroupTitle = ageGroup
         .replaceAll(RegExp(r'[()]'), '')
         .trim();
@@ -800,8 +781,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                 ),
               ),
 
-              // المسودة: ما تظهر أي حالة
-              // التبرع النشط: تظهر الشارة فقط إذا تم التسليم (محسوبة من الأيتم)
               if (!isDraft && donationDelivered) ...[
                 const SizedBox(width: AppDesign.spaceSM),
                 _statusPill('delivered', compact: false),
@@ -852,9 +831,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             ),
           ),
 
-          // ==================================================
-          // طريقة التوصيل (للتبرعات المؤكدة فقط)
-          // ==================================================
           if (!isDraft) ...[
             const SizedBox(height: 10),
             StreamBuilder<QuerySnapshot>(
@@ -865,7 +841,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
               builder: (context, snap) {
                 final boxDocs = snap.data?.docs ?? [];
 
-                // زر المسح: فقط للتوصيل الذاتي وإذا فيه صناديق لسا ما انسلمت
                 final bool showScan =
                     !donationDelivered &&
                     deliveryMethod.toLowerCase() == 'self_delivery' &&
@@ -875,7 +850,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
                 final bool isPickup = deliveryMethod.toLowerCase() == 'pickup';
 
-                // بيانات العنوان المرتبط بخيار الاستلام من الموقع
                 final String city = (data['city'] ?? data['donorCity'] ?? '')
                     .toString()
                     .trim();
@@ -961,8 +935,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
             ),
           ],
 
-          // الصناديق وقطعها تظهر في التبرعات النشطة فقط
-          // (المسودة تنعرض وتتعدل من صفحة التعديل)
           if (!isDraft) ...[
             const SizedBox(height: AppDesign.spaceLG),
             StreamBuilder<QuerySnapshot>(
@@ -981,7 +953,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
 
                 final boxes = [...(snapshot.data?.docs ?? [])];
 
-                // ترتيب الصناديق حسب الرقم
                 boxes.sort((a, b) {
                   final an =
                       ((a.data() as Map<String, dynamic>)['boxNumber'] ?? 0)
@@ -1022,7 +993,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                       final boxCode = (bData['boxCode'] ?? '').toString();
                       final boxNumber = (bData['boxNumber'] ?? '').toString();
 
-                      // هل كل أيتم هذا الصندوق تم تسليمها؟ (محسوب من الأيتم)
                       final bool thisBoxDelivered =
                           boxDelivered[box.id] == true;
 
@@ -1042,7 +1012,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                           title: Row(
                             textDirection: TextDirection.rtl,
                             children: [
-                              // اسم الصندوق على اليمين
                               Expanded(
                                 child: Align(
                                   alignment: Alignment.centerRight,
@@ -1064,9 +1033,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                                 ),
                               ),
 
-                              // الحالة على اليسار: "تم التسليم" فقط إذا الصندوق
-                              // مكتمل والتبرع لسا ما اكتمل. إذا التبرع كامل
-                              // تم تسليمه: ما نعرض أي حالة على الصناديق
                               if (thisBoxDelivered && !donationDelivered) ...[
                                 AppGap.wMD,
                                 _statusPill('delivered'),
@@ -1084,7 +1050,7 @@ class _ViewDonationPageState extends State<ViewDonationPage>
                     }),
 
                     AppGap.md,
- Align(
+                    Align(
                       alignment: Alignment.centerRight,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1206,11 +1172,8 @@ class _ViewDonationPageState extends State<ViewDonationPage>
           final data = doc.data() as Map<String, dynamic>;
           final status = (data['status'] ?? '').toString().trim();
 
-          // تبرع بدون حالة = غير مكتمل (ما انضغط "تم")، ما يظهر في أي تبويب
           if (status.isEmpty) return false;
 
-          // المسودات: status == draft فقط
-          // النشطة: أي حالة ثانية غير draft
           return draftsOnly ? _isDraftStatus(status) : !_isDraftStatus(status);
         }).toList();
 
@@ -1429,8 +1392,6 @@ class _ViewDonationPageState extends State<ViewDonationPage>
   }
 }
 
-/// ═════════ صفحة مسح الباركود لتأكيد التسليم للمستودع ═════════
-/// ترجع true إذا تم تسليم كل صناديق التبرع.
 class DropoffScanPage extends StatefulWidget {
   final String donationId;
 
@@ -1516,7 +1477,6 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
           .where('donationId', isEqualTo: widget.donationId)
           .get();
 
-      // ── باركود التبرع نفسه (donationId): تسليم كل الصناديق المتبقية دفعة وحدة ──
       if (_normalize(raw) == _normalize(widget.donationId)) {
         final pending = snap.docs
             .where((d) => d.data()['status'] != 'available')
@@ -1561,7 +1521,6 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
         return;
       }
 
-      // دوّر على الصندوق اللي كوده يطابق الباركود
       QueryDocumentSnapshot<Map<String, dynamic>>? match;
       for (final d in snap.docs) {
         final code = (d.data()['boxCode'] ?? '').toString();
@@ -1585,7 +1544,6 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
         return;
       }
 
-      // 1) الصندوق + قطعه -> متاح (دفعة وحدة)
       final boxItemsSnap = await db
           .collection('items')
           .where('boxId', isEqualTo: match.id)
@@ -1604,7 +1562,6 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
 
       await batch.commit();
 
-      // 2) إذا كل الصناديق صارت متاحة، التبرع -> متاح
       final remaining = snap.docs
           .where((d) => d.id != match!.id && d.data()['status'] != 'available')
           .toList();
