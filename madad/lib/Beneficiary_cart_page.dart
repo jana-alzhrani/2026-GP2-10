@@ -7,10 +7,9 @@ import 'beneficiary_delivery_method_page.dart';
 import 'Beneficiary_view_item_page.dart';
 import 'order_limits_service.dart';
 
-/// Cart items + current limits, loaded together.
 class _CartData {
   final List<Map<String, dynamic>> items;
-  final OrderLimits? limits; // null = couldn't be computed (don't block)
+  final OrderLimits? limits;
 
   const _CartData({required this.items, required this.limits});
 }
@@ -25,16 +24,14 @@ class BeneficiaryCartPage extends StatefulWidget {
 }
 
 class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
-  // ---- Beneficiary status (live) ----
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _statusSub;
   String _beneficiaryStatus = 'pending';
   bool _statusLoaded = false;
 
   bool get _isApproved => _beneficiaryStatus == 'approved';
 
-  // ---- Cart data cache (used by pull-to-refresh) ----
-  QuerySnapshot? _lastCartSnapshot; // latest cart docs from the stream
-  Future<_CartData>? _dataFuture; // items + limits for those docs
+  QuerySnapshot? _lastCartSnapshot;
+  Future<_CartData>? _dataFuture;
   _CartData? _lastData;
   int _reloadKey = 0;
 
@@ -80,10 +77,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
         );
   }
 
-  // ============================================================
-  // ACTIONS
-  // ============================================================
-
   Future<void> _deleteFromCart(String cartDocId) async {
     try {
       await FirebaseFirestore.instance
@@ -120,7 +113,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
     if (availableItems.isEmpty) return;
     if (!_isApproved) return;
 
-    // Re-check the item quota with fresh data right before continuing.
     final fresh = await OrderLimitsService.tryFetch(widget.userId) ?? limits;
 
     if (!mounted) return;
@@ -140,28 +132,20 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
       ),
     );
 
-    // Back from the delivery page (without ordering): reload cart items + limits.
     if (!mounted) return;
     await _onRefresh();
   }
 
-  // ============================================================
-  // DATA
-  // ============================================================
-
-  /// Pull-to-refresh: reloads the cart items and the limits.
   Future<void> _onRefresh() async {
     if (!mounted) return;
     setState(() {
       _reloadKey++;
       _lastCartSnapshot = null;
       _dataFuture = null;
-      // _lastData is kept so the old list stays visible until the new one loads.
     });
   }
 
   Future<_CartData> _loadCartData(List<QueryDocumentSnapshot> cartDocs) async {
-    // Start both at the same time.
     final itemsFuture = _loadCartItems(cartDocs);
     final limitsFuture = OrderLimitsService.tryFetch(widget.userId);
 
@@ -182,8 +166,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
       final itemId = (cart['itemId'] ?? '').toString();
       final boxId = (cart['boxId'] ?? '').toString();
 
-      // Old cart entries (boxId only) can't be resolved to an item.
-      // Show them as unavailable so the user can remove them.
       if (itemId.isEmpty) {
         result.add({
           'cartDocId': cartDoc.id,
@@ -205,8 +187,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
         final data = itemSnap.data();
         final isAvailable = itemSnap.exists && data?['status'] == 'available';
 
-        // Live data if the item still exists, otherwise the snapshot
-        // that was saved in the cart document.
         final Map<String, dynamic> itemData = Map<String, dynamic>.from(
           data ?? cart,
         );
@@ -244,7 +224,7 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
           'boxId': (itemData['boxId'] ?? boxId).toString(),
           'isAvailable': isAvailable,
           'item': itemData,
-          // kept so the delivery page can still read 'box' if it expects it
+
           'box': itemData,
         });
       } catch (e) {
@@ -263,10 +243,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
 
     return result;
   }
-
-  // ============================================================
-  // BUILD
-  // ============================================================
 
   @override
   Widget build(BuildContext context) {
@@ -329,8 +305,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
           return _buildEmptyCart();
         }
 
-        // Load again only when the cart really changed (or on refresh),
-        // not on every rebuild.
         if (_dataFuture == null ||
             !identical(_lastCartSnapshot, snapshot.data)) {
           _lastCartSnapshot = snapshot.data;
@@ -344,8 +318,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
               _lastData = cartSnapshot.data;
             }
 
-            // Show a spinner only the first time; while reloading we keep
-            // showing the previous data so the list doesn't flash.
             if (cartSnapshot.connectionState == ConnectionState.waiting &&
                 _lastData == null) {
               return const Center(child: CircularProgressIndicator());
@@ -372,7 +344,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
                     color: AppDesign.primary,
                     onRefresh: _onRefresh,
                     child: ListView(
-                      // Always scrollable so pull-down works even with 1 item.
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
                       children: [
@@ -404,10 +375,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
       },
     );
   }
-
-  // ============================================================
-  // WIDGETS
-  // ============================================================
 
   Widget _buildNotApproved() {
     final message = _beneficiaryStatus == 'rejected'
@@ -489,7 +456,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
                 ),
               );
 
-              // Back from the item page: reload cart items + limits.
               if (!mounted) return;
               await _onRefresh();
             }
@@ -679,9 +645,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
     );
   }
 
-  // ------------------------------------------------------------
-  // Quota card: progress bar of the items left + days until reset
-  // ------------------------------------------------------------
   Widget _buildQuotaCard(OrderLimits limits, int cartCount) {
     final maxItems = limits.maxItemsPerPeriod;
     final remaining = limits.itemsRemaining;
@@ -794,7 +757,6 @@ class _BeneficiaryCartPageState extends State<BeneficiaryCartPage> {
     final overItems =
         limits != null && limits.exceedsItems(availableItems.length);
 
-    // Warning under the card (only when the item quota is exceeded).
     String? warning;
     if (overItems) {
       warning = limits.itemsRemaining == 0
