@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 class AppDesign {
   AppDesign._();
 
-  // =========================
-  // Colors
-  // =========================
   static const Color primary = Color(0xFF0A4D5C);
   static const Color secondary = Color(0xFF8AA7B0);
   static const Color softGreen = Color(0xFF8AA495);
@@ -26,15 +23,9 @@ class AppDesign {
   static const Color success = Color.fromARGB(255, 36, 63, 37);
   static const Color warning = Color.fromARGB(255, 248, 219, 173);
 
-  // =========================
-  // Font
-  // =========================
   static const String fontFamily = 'Tajawal';
   static const double lineHeight = 1.3;
 
-  // =========================
-  // Typography
-  // =========================
   static const double h1 = 24;
   static const double h2 = 20;
   static const double subtitle = 16;
@@ -42,18 +33,12 @@ class AppDesign {
   static const double button = 16;
   static const double caption = 12;
 
-  // =========================
-  // Radius
-  // =========================
   static const double radiusXS = 8;
   static const double radiusSM = 12;
   static const double radiusMD = 16;
   static const double radiusLG = 20;
   static const double radiusXL = 24;
 
-  // =========================
-  // Spacing
-  // =========================
   static const double spaceXS = 4;
   static const double spaceSM = 8;
   static const double spaceMD = 12;
@@ -64,45 +49,27 @@ class AppDesign {
   static const double screenPadding = 16;
   static const double sectionSpacing = 24;
 
-  // =========================
-  // Button sizes
-  // =========================
   static const double buttonHeightSM = 44;
   static const double buttonHeightMD = 52;
   static const double buttonHeightLG = 56;
 
-  // =========================
-  // Input sizes
-  // =========================
   static const double inputHeight = 56;
   static const double inputHorizontalPadding = 16;
   static const double inputVerticalPadding = 16;
 
-  // =========================
-  // Card sizes
-  // =========================
   static const double cardRadius = 20;
   static const double cardPadding = 16;
   static const double cardMinHeightSM = 100;
   static const double cardMinHeightMD = 140;
   static const double cardMinHeightLG = 180;
 
-  // =========================
-  // Icon sizes
-  // =========================
   static const double iconSM = 18;
   static const double iconMD = 24;
   static const double iconLG = 32;
 
-  // =========================
-  // Elevation
-  // =========================
   static const double cardElevation = 1;
   static const double fabElevation = 2;
 
-  // =========================
-  // Text Styles
-  // =========================
   static const TextStyle h1Style = TextStyle(
     fontFamily: fontFamily,
     fontSize: h1,
@@ -167,9 +134,6 @@ class AppDesign {
     color: textSecondary,
   );
 
-  // =========================
-  // Decorations
-  // =========================
   static final BoxDecoration primaryCardDecoration = BoxDecoration(
     color: surface,
     borderRadius: BorderRadius.circular(cardRadius),
@@ -189,9 +153,6 @@ class AppDesign {
     border: Border.all(color: border),
   );
 
-  // =========================
-  // Theme
-  // =========================
   static final ThemeData lightTheme = ThemeData(
     useMaterial3: true,
     fontFamily: fontFamily,
@@ -389,95 +350,95 @@ class AppDesign {
     ),
   );
 
- static Future<bool> showAppDialog({
-  required BuildContext context,
-  required String title,
-  required String message,
-  String confirmText = 'نعم',
-  String cancelText = 'إلغاء',
-}) async {
-  return await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            backgroundColor: const Color(0xFFF7FAFB),
-            surfaceTintColor: Colors.transparent,
-            elevation: 0,
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 24,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            contentPadding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontFamily: AppDesign.fontFamily,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      message,
-                      textAlign: TextAlign.center,
-                      softWrap: true,
-                      style: const TextStyle(
-                        fontFamily: AppDesign.fontFamily,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.black,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
+  static Future<bool> showAppDialog({
+    required BuildContext context,
+    required String title,
+    required String message,
+    String confirmText = 'نعم',
+    String cancelText = 'إلغاء',
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              backgroundColor: const Color(0xFFF7FAFB),
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 24,
               ),
-            ),
-            actionsAlignment: MainAxisAlignment.spaceEvenly,
-            actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(
-                  cancelText,
-                  style: const TextStyle(
-                    fontFamily: AppDesign.fontFamily,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: AppDesign.fontFamily,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        softWrap: true,
+                        style: const TextStyle(
+                          fontFamily: AppDesign.fontFamily,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(
-                  confirmText,
-                  style: const TextStyle(
-                    fontFamily: AppDesign.fontFamily,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
+              actionsAlignment: MainAxisAlignment.spaceEvenly,
+              actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: Text(
+                    cancelText,
+                    style: const TextStyle(
+                      fontFamily: AppDesign.fontFamily,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black,
+                    ),
                   ),
                 ),
-              ),
-            ],
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: Text(
+                    confirmText,
+                    style: const TextStyle(
+                      fontFamily: AppDesign.fontFamily,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ) ??
-      false;
-}
+        ) ??
+        false;
+  }
 
   static void showSuccessSnackBar(
     BuildContext context,
@@ -566,9 +527,6 @@ class AppDesign {
   }
 }
 
-// =========================
-// Gaps
-// =========================
 class AppGap {
   AppGap._();
 
@@ -587,9 +545,6 @@ class AppGap {
   static const SizedBox wXL = SizedBox(width: AppDesign.spaceXL);
 }
 
-// =========================
-// Padding
-// =========================
 class AppPadding {
   AppPadding._();
 
@@ -610,9 +565,6 @@ class AppPadding {
   );
 }
 
-// =========================
-// Sizes
-// =========================
 class AppSizes {
   AppSizes._();
 
