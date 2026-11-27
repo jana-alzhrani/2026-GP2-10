@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_design.dart';
 
-/// Fetch items directly using requestId.
 Future<List<Map<String, dynamic>>> fetchRequestItems(String requestId) async {
   final db = FirebaseFirestore.instance;
 
@@ -15,7 +14,6 @@ Future<List<Map<String, dynamic>>> fetchRequestItems(String requestId) async {
     return <String, dynamic>{...doc.data(), 'itemId': doc.id};
   }).toList();
 
-  // Box data is optional: if anything fails here, the items still load.
   try {
     final boxIds = items
         .map((i) => (i['boxId'] ?? '').toString())
@@ -70,7 +68,6 @@ Future<List<Map<String, dynamic>>> fetchRequestItems(String requestId) async {
   return items;
 }
 
-/// Expandable list of items inside the beneficiary request card.
 class RequestItemsList extends StatelessWidget {
   final List<Map<String, dynamic>> items;
 
@@ -244,7 +241,6 @@ class RequestItemsList extends StatelessWidget {
   }
 }
 
-/// Sort key for tasks: newest first.
 DateTime taskSortTime(
   Map<String, dynamic> data, {
   required bool isDonation,
