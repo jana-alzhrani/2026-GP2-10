@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_design.dart';
-// Still needed: taskSortTime is used for sorting the completed tab.
 import 'request_items_helper.dart';
 
 class CourierTasksPage extends StatefulWidget {
@@ -19,8 +18,8 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
   late Stream<QuerySnapshot> _requestsStreamValue = _requestsStream();
 
   Future<void> _acceptTask({
-    required String collection, // 'donations' or 'requests'
-    required String boxField, // 'donationId' or 'requestId'
+    required String collection,
+    required String boxField,
     required String id,
     required String dialogTitle,
     required String dialogMessage,
@@ -227,8 +226,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                             (data['courierTaskStatus'] ?? '')
                                 .toString()
                                 .toLowerCase();
-                        final deliveryMethod =
-                            data['deliveryMethod'] ?? ''; // جلب طريقة التوصيل
+                        final deliveryMethod = data['deliveryMethod'] ?? '';
                         final courierId = data['courierId'];
 
                         bool isAvailable =
@@ -262,9 +260,7 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
                         final db = b['data'] as Map<String, dynamic>;
 
                         if (_selectedTab == 0) {
-                          return createdAtOf(
-                            db,
-                          ).compareTo(createdAtOf(da)); // newest first
+                          return createdAtOf(db).compareTo(createdAtOf(da));
                         }
                         final ta = taskSortTime(
                           da,
