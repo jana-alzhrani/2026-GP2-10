@@ -53,6 +53,7 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
   int totalItems = 0;
   int totalBoxes = 0;
+  int _savedItemCount = 0;
   int? openedBox;
 
   Map<int, List<Map<String, dynamic>>> boxes = {};
@@ -146,6 +147,7 @@ class _EditDonationPageState extends State<EditDonationPage> {
     selectedAgeGroup = _findAgeGroupByLabel(widget.initialAgeGroupLabel);
 
     totalItems = widget.initialItemCount;
+    _savedItemCount = widget.initialItemCount;
     _itemCountController.text = widget.initialItemCount == 0
         ? ''
         : widget.initialItemCount.toString();
@@ -290,6 +292,8 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
           _itemCountController.text = totalItems.toString();
 
+          _savedItemCount = totalItems;
+
           savedBoxes = loadedBoxes.keys.toSet();
         }
 
@@ -359,7 +363,7 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
     if (newCount == totalItems) return;
 
-    if (newCount < totalItems) {
+    if (newCount < totalItems && newCount < _savedItemCount) {
       final ok = await AppDesign.showAppDialog(
         context: context,
         title: 'تقليل عدد القطع',
@@ -1096,6 +1100,8 @@ If it is valid, answer only with JSON (no extra text) in this format:
       );
 
       _originalImagePaths = newPaths;
+
+      _savedItemCount = totalItems;
 
       if (!mounted) return;
 
