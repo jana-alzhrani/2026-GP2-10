@@ -449,7 +449,7 @@ class _BeneficiaryHomePageState extends State<BeneficiaryHomePage> {
       await FirebaseFirestore.instance
           .collection('notifications')
           .doc(notificationId)
-          .update({'isRead': true, 'readAt': FieldValue.serverTimestamp()});
+          .update({'isRead': true});
     } catch (e) {
       debugPrint("NOTIFICATION READ ERROR: $e");
     }
