@@ -1,27 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
-// ================================================================
-// SETTINGS
-// ================================================================
-
 const String kRequestsCollection = 'requests';
 const String kRequestOwnerField = 'beneficiaryId';
 const String kRequestDateField = 'createdAt';
 const String kRequestItemsCountField = 'itemsCount';
 
-/// Cancelled and rejected requests do not count toward the item quota.
 const Set<String> kIgnoredRequestStatuses = {'cancelled', 'rejected'};
 
-/// One quota period starts with the beneficiary's first request and lasts 90 days.
 const int kLimitPeriodDays = 90;
 
-/// Maximum number of items a beneficiary can receive in one period.
 const int kMaxItemsPerPeriod = 30;
-
-// ================================================================
-// RESULT
-// ================================================================
 
 class OrderLimits {
   final int maxItemsPerPeriod;
@@ -53,12 +42,7 @@ class OrderLimits {
       : 'المتبقي لك $itemsRemaining قطعة فقط من أصل $maxItemsPerPeriod خلال $kLimitPeriodDays يومًا';
 }
 
-// ================================================================
-// SERVICE
-// ================================================================
-
 class OrderLimitsService {
-  /// One-time quota fetch. Kept for pages that only need a fresh check.
   static Future<OrderLimits> fetch(String userId) async {
     final snap = await FirebaseFirestore.instance
         .collection(kRequestsCollection)
@@ -68,10 +52,6 @@ class OrderLimitsService {
     return _calculate(snap.docs);
   }
 
-  /// Live quota stream.
-  ///
-  /// Whenever a request for this beneficiary is added, edited, or deleted
-  /// in Firestore, the quota is recalculated and the UI receives a new value.
   static Stream<OrderLimits> watch(String userId) {
     return FirebaseFirestore.instance
         .collection(kRequestsCollection)
@@ -119,7 +99,6 @@ class OrderLimitsService {
     if (cycleStart != null && DateTime.now().isBefore(cycleStart.add(period))) {
       cycleEnd = cycleStart.add(period);
     } else {
-      // The previous period has ended, or the beneficiary has no requests.
       itemsUsed = 0;
     }
 
@@ -130,8 +109,6 @@ class OrderLimitsService {
     );
   }
 
-  /// Returns null on error for one-time fetches, so technical problems
-  /// do not block the user.
   static Future<OrderLimits?> tryFetch(String userId) async {
     try {
       return await fetch(userId);
