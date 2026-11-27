@@ -27,39 +27,23 @@ class _AdminHomePageState extends State<AdminHomePage> {
     _loadAdminData();
   }
 
-  // =========================================================
-  // Load Admin + Beneficiaries + Couriers
-  // =========================================================
-
   Future<void> _loadAdminData() async {
     try {
-      // -----------------------------------------
-      // 1) بيانات الأدمن من Users
-      // -----------------------------------------
       final adminDoc = await FirebaseFirestore.instance
           .collection('Users')
           .doc(widget.userId)
           .get();
 
-      // -----------------------------------------
-      // 2) بيانات المستفيدين من beneficiaries
-      // -----------------------------------------
       final beneficiariesSnapshot = await FirebaseFirestore.instance
           .collection('beneficiaries')
           .get();
 
-      // -----------------------------------------
-      // 3) بيانات المناديب من couriers
-      // -----------------------------------------
       final couriersSnapshot = await FirebaseFirestore.instance
           .collection('couriers')
           .get();
 
       if (!mounted) return;
 
-      // -----------------------------------------
-      // اسم الأدمن
-      // -----------------------------------------
       String fetchedAdminName = 'المشرف';
 
       if (adminDoc.exists) {
@@ -76,9 +60,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
         }
       }
 
-      // -----------------------------------------
-      // حساب المستفيدين
-      // -----------------------------------------
       int pending = 0;
       int approved = 0;
 
@@ -94,9 +75,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
         }
       }
 
-      // -----------------------------------------
-      // عدد المناديب
-      // -----------------------------------------
       final int couriers = couriersSnapshot.docs
           .where(
             (d) =>
@@ -112,6 +90,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
         couriersCount = couriers;
         isLoading = false;
       });
+
+      _publishPublicStats();
     } catch (e) {
       debugPrint('Error loading admin data: $e');
 
@@ -120,6 +100,62 @@ class _AdminHomePageState extends State<AdminHomePage> {
       setState(() {
         isLoading = false;
       });
+    }
+  }
+
+  Future<void> _publishPublicStats() async {
+    try {
+      final db = FirebaseFirestore.instance;
+
+      final results = await Future.wait([
+        db.collection('donations').get(),
+        db
+            .collection('Users')
+            .where('role', whereIn: ['beneficiary', 'مستفيد'])
+            .get(),
+      ]);
+
+      final donationsSnapshot = results[0];
+      final beneficiariesSnapshot = results[1];
+
+      final Set<String> publishedDonorIds = {};
+      int totalDeliveredItems = 0;
+
+      for (final doc in donationsSnapshot.docs) {
+        final data = doc.data();
+
+        final status = (data['status'] ?? '').toString().trim().toLowerCase();
+
+        final donorId =
+            (data['donorID'] ?? data['donorId'] ?? data['userId'] ?? '')
+                .toString()
+                .trim();
+
+        if (status == 'published' && donorId.isNotEmpty) {
+          publishedDonorIds.add(donorId);
+        }
+
+        if (status == 'delivered') {
+          final value = data['numberOfItems'];
+
+          if (value is int) {
+            totalDeliveredItems += value;
+          } else if (value is double) {
+            totalDeliveredItems += value.toInt();
+          } else if (value is String) {
+            totalDeliveredItems += int.tryParse(value) ?? 0;
+          }
+        }
+      }
+
+      await db.collection('stats').doc('public').set({
+        'donorsCount': publishedDonorIds.length,
+        'clothingCount': totalDeliveredItems ~/ 5,
+        'familiesCount': beneficiariesSnapshot.docs.length,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Error publishing public stats: $e');
     }
   }
 
@@ -146,9 +182,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
       AppDesign.showErrorSnackBar(context, 'تعذر تسجيل الخروج، حاول مرة أخرى');
     }
   }
-  // =========================================================
-  // Build
-  // =========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -193,9 +226,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
                   const SizedBox(height: 24),
 
-                  // =================================================
-                  // المستفيدون
-                  // =================================================
                   _buildManagementCard(
                     title: 'المستفيدون',
                     subtitle: 'مراجعة طلبات التسجيل وإدارة المستفيدين',
@@ -209,16 +239,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
                         arguments: widget.userId,
                       );
 
-                      // تحديث الأعداد بعد الرجوع
                       _loadAdminData();
                     },
                   ),
 
                   const SizedBox(height: 18),
 
-                  // =================================================
-                  // المناديب
-                  // =================================================
                   _buildManagementCard(
                     title: 'المناديب',
                     subtitle: 'عرض وإدارة حسابات مناديب التوصيل',
@@ -230,7 +256,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
                         arguments: widget.userId,
                       );
 
-                      // تحديث العدد بعد الرجوع
                       _loadAdminData();
                     },
                   ),
@@ -243,16 +268,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
             ),
           ),
         ),
-
-        // لا يوجد Bottom Navigation
-        // الأدمن لديه الرئيسية فقط
       ),
     );
   }
-
-  // =========================================================
-  // Header
-  // =========================================================
 
   Widget _buildHeader() {
     final String firstLetter = adminName.trim().isNotEmpty
@@ -306,7 +324,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
         const SizedBox(width: 12),
 
-        // تسجيل الخروج
         Material(
           color: Colors.transparent,
           child: InkWell(
@@ -331,10 +348,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
       ],
     );
   }
-
-  // =========================================================
-  // Management Card
-  // =========================================================
 
   Widget _buildManagementCard({
     required String title,
@@ -442,10 +455,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
     );
   }
 
-  // =========================================================
-  // Quick Summary
-  // =========================================================
-
   Widget _buildQuickSummary() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -494,10 +503,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
       ],
     );
   }
-
-  // =========================================================
-  // Summary Card
-  // =========================================================
 
   Widget _buildSummaryCard({
     required String title,
