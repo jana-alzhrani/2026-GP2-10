@@ -1,55 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'donor_home_page.dart';
-import 'Beneficiary_home_page.dart';
+import 'auth_service.dart';
 import 'welcome_page.dart';
-import 'admin_home_page.dart';
-import 'courier_home_page.dart';
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
-  Future<Widget> _getHome() async {
-    final user = FirebaseAuth.instance.currentUser;
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
 
-    if (user == null) {
+class _AuthGateState extends State<AuthGate> {
+  late final Future<Widget> _homeFuture = _getHome();
+
+  Future<Widget> _getHome() async {
+    if (FirebaseAuth.instance.currentUser == null) {
       return const WelcomePage();
     }
 
-    final userId = user.uid;
-
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('Users')
-          .doc(userId)
-          .get();
+      final account = await AuthService.resolveCurrentAccount();
 
-      if (!doc.exists) {
+      if (account == null || account.isDeleted) {
+        await AuthService.signOut();
         return const WelcomePage();
       }
 
-      final data = doc.data()!;
+      final home = AuthService.homeFor(account);
 
-      // الحساب موقوف (محذوف من الأدمن)
-      if ((data['status'] ?? '').toString().trim().toLowerCase() ==
-          'deleted') {
-        await FirebaseAuth.instance.signOut();
+      if (home == null) {
+        await AuthService.signOut();
         return const WelcomePage();
       }
-      final role = (data['role'] ?? '').toString().trim().toLowerCase();
-      if (role == 'beneficiary') {
-        return BeneficiaryHomePage(userId: userId);
-      } else if (role == 'donor') {
-        return DonorHomePage(userId: userId);
-      } else if (role == 'admin') {
-        return AdminHomePage(userId: userId);
-      } else if (role == 'courier') {
-        return CourierHomePage(userId: userId);
-      } else {
-        return const WelcomePage();
-      }
+
+      return home;
+    } on AccountLinkedElsewhereException {
+      await AuthService.signOut();
+      return const WelcomePage();
     } catch (e) {
       debugPrint("AuthGate Error: $e");
       return const WelcomePage();
@@ -59,7 +47,7 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Widget>(
-      future: _getHome(),
+      future: _homeFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
