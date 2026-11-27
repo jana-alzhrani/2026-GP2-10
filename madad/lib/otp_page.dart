@@ -8,35 +8,33 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'donor_home_page.dart';
 import 'Beneficiary_home_page.dart';
-import 'admin_home_page.dart';
-import 'courier_home_page.dart';
 import 'app_design.dart';
+import 'auth_service.dart';
 
 class OtpPage extends StatefulWidget {
-  String correctCode;
+  final String verificationId;
+  final int? resendToken;
 
   final String firstName;
   final String lastName;
   final String phone;
   final bool isLogin;
 
-  // بيانات إضافية لتسجيل المستفيد
   final String role;
   final String? socialSecurityNumber;
-  final String? socialSecurityPdfUrl;
   final Uint8List? socialSecurityPdfBytes;
   final String? socialSecurityPdfName;
 
-  OtpPage({
+  const OtpPage({
     super.key,
-    required this.correctCode,
+    required this.verificationId,
+    this.resendToken,
     required this.firstName,
     required this.lastName,
     required this.phone,
     required this.isLogin,
     this.role = 'donor',
     this.socialSecurityNumber,
-    this.socialSecurityPdfUrl,
     this.socialSecurityPdfBytes,
     this.socialSecurityPdfName,
   });
@@ -50,17 +48,18 @@ class _OtpPageState extends State<OtpPage> {
 
   Timer? _timer;
 
+  late String _verificationId = widget.verificationId;
+  late int? _resendToken = widget.resendToken;
+
   int seconds = 60;
   bool canResend = false;
   bool isVerifying = false;
   bool isResending = false;
 
-  int? resendToken;
-
   @override
   void initState() {
     super.initState();
-    startTimer();
+    _startTimer();
   }
 
   @override
@@ -70,29 +69,10 @@ class _OtpPageState extends State<OtpPage> {
     super.dispose();
   }
 
-  String formatPhoneNumber(String phone) {
-    final value = phone.trim();
-
-    if (value.startsWith('+966')) {
-      return value;
-    } else if (value.startsWith('966')) {
-      return '+$value';
-    } else if (value.startsWith('05')) {
-      return '+966${value.substring(1)}';
-    } else if (value.startsWith('5')) {
-      return '+966$value';
-    }
-
-    return value;
-  }
-
-  void startTimer() {
+  void _startTimer() {
     _timer?.cancel();
-
-    setState(() {
-      seconds = 60;
-      canResend = false;
-    });
+    seconds = 60;
+    canResend = false;
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
@@ -101,14 +81,9 @@ class _OtpPageState extends State<OtpPage> {
       }
 
       if (seconds > 0) {
-        setState(() {
-          seconds--;
-        });
+        setState(() => seconds--);
       } else {
-        setState(() {
-          canResend = true;
-        });
-
+        setState(() => canResend = true);
         timer.cancel();
       }
     });
@@ -117,53 +92,50 @@ class _OtpPageState extends State<OtpPage> {
   Future<void> resendCode() async {
     if (!canResend || isResending) return;
 
-    setState(() {
-      isResending = true;
-    });
+    setState(() => isResending = true);
 
-    try {
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: formatPhoneNumber(widget.phone),
-        forceResendingToken: resendToken,
-        verificationCompleted: (PhoneAuthCredential credential) async {},
-        verificationFailed: (FirebaseAuthException e) {
-          if (!mounted) return;
+    await AuthService.sendCode(
+      phone: widget.phone,
+      resendToken: _resendToken,
+      onCodeSent: (verificationId, token) {
+        if (!mounted) return;
 
-          AppDesign.showErrorSnackBar(
-            context,
-            e.message ?? 'فشل إرسال رمز التحقق',
-          );
-        },
-        codeSent: (String verificationId, int? token) {
-          if (!mounted) return;
+        setState(() {
+          _verificationId = verificationId;
+          _resendToken = token;
+          isResending = false;
+          _startTimer();
+        });
 
-          setState(() {
-            widget.correctCode = verificationId;
-            resendToken = token;
-          });
+        AppDesign.showSuccessSnackBar(context, 'تم إرسال رمز تحقق جديد');
+      },
+      onError: (error) {
+        if (!mounted) return;
 
-          AppDesign.showSuccessSnackBar(context, 'تم إرسال رمز تحقق جديد');
+        setState(() => isResending = false);
 
-          startTimer();
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          widget.correctCode = verificationId;
-        },
-      );
-    } catch (e) {
-      if (mounted) {
         AppDesign.showErrorSnackBar(
           context,
-          'تعذر إعادة إرسال الرمز، حاول مرة أخرى',
+          error is FirebaseAuthException
+              ? (error.message ?? 'فشل إرسال رمز التحقق')
+              : 'تعذر إعادة إرسال الرمز، حاول مرة أخرى',
         );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          isResending = false;
-        });
-      }
-    }
+      },
+    );
+  }
+
+  void _goTo(Widget page) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => page),
+      (route) => false,
+    );
+  }
+
+  Future<void> _failAndSignOut(String message) async {
+    await AuthService.signOut();
+    if (!mounted) return;
+    AppDesign.showErrorSnackBar(context, message);
   }
 
   Future<void> verifyCode() async {
@@ -176,246 +148,44 @@ class _OtpPageState extends State<OtpPage> {
       return;
     }
 
-    if (smsCode.length != 6) {
+    if (!RegExp(r'^\d{6}$').hasMatch(smsCode)) {
       AppDesign.showErrorSnackBar(context, 'أدخل رمز التحقق المكون من 6 أرقام');
       return;
     }
 
-    setState(() {
-      isVerifying = true;
-    });
+    setState(() => isVerifying = true);
 
     try {
       final credential = PhoneAuthProvider.credential(
-        verificationId: widget.correctCode,
+        verificationId: _verificationId,
         smsCode: smsCode,
       );
 
       await FirebaseAuth.instance.signInWithCredential(credential);
 
-      final currentUser = FirebaseAuth.instance.currentUser;
+      final account = await AuthService.resolveCurrentAccount();
 
-      if (currentUser == null) {
-        throw Exception('تعذر تسجيل الدخول');
+      if (account != null) {
+        await _openExistingAccount(account);
+        return;
       }
 
-      final uid = currentUser.uid;
-      final users = FirebaseFirestore.instance.collection('Users');
-
-      // تسجيل الدخول: البحث عن الحساب برقم الجوال
       if (widget.isLogin) {
-        final localPhone = widget.phone.trim();
-        final internationalPhone = formatPhoneNumber(widget.phone);
-
-        QuerySnapshot<Map<String, dynamic>> userCheck = await users
-            .where('phone', isEqualTo: localPhone)
-            .limit(1)
-            .get();
-
-        if (userCheck.docs.isEmpty) {
-          userCheck = await users
-              .where('phone', isEqualTo: internationalPhone)
-              .limit(1)
-              .get();
-        }
-
-        if (userCheck.docs.isEmpty) {
-          await FirebaseAuth.instance.signOut();
-
-          if (mounted) {
-            AppDesign.showErrorSnackBar(
-              context,
-              'رقم الجوال غير مرتبط بحساب مسجل',
-            );
-          }
-
-          return;
-        }
-
-        final matchedUser = userCheck.docs.first;
-        final userData = matchedUser.data();
-        final appUserId = matchedUser.id;
-
-        final role = (userData['role'] ?? '').toString().trim().toLowerCase();
-
-        // الحساب موقوف (محذوف من الأدمن)
-        if ((userData['status'] ?? '').toString().trim().toLowerCase() ==
-            'deleted') {
-          await FirebaseAuth.instance.signOut();
-
-          if (mounted) {
-            AppDesign.showErrorSnackBar(context, 'تم إيقاف هذا الحساب');
-          }
-
-          return;
-        }
-
-        if (!mounted) return;
-
-        if (role == 'courier') {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(
-              builder: (_) => CourierHomePage(userId: appUserId),
-            ),
-            (route) => false,
-          );
-        } else if (role == 'donor') {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => DonorHomePage(userId: appUserId)),
-            (route) => false,
-          );
-        } else if (role == 'beneficiary') {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(
-              builder: (_) => BeneficiaryHomePage(userId: appUserId),
-            ),
-            (route) => false,
-          );
-        } else if (role == 'admin') {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => AdminHomePage(userId: appUserId)),
-            (route) => false,
-          );
-        } else {
-          await FirebaseAuth.instance.signOut();
-
-          if (mounted) {
-            AppDesign.showErrorSnackBar(context, 'نوع الحساب غير معروف');
-          }
-        }
-
+        await _failAndSignOut('رقم الجوال غير مرتبط بحساب مسجل');
         return;
       }
 
-      // إنشاء حساب جديد: المتبرع أو المستفيد فقط
-      final userRef = users.doc(uid);
-      final userDoc = await userRef.get();
-
-      if (!userDoc.exists) {
-        final role = widget.role.trim().toLowerCase();
-
-        if (role != 'donor' && role != 'beneficiary') {
-          await FirebaseAuth.instance.signOut();
-
-          if (mounted) {
-            AppDesign.showErrorSnackBar(context, 'نوع الحساب غير معروف');
-          }
-
-          return;
-        }
-
-        String? uploadedPdfUrl = widget.socialSecurityPdfUrl;
-
-        // رفع ملف الضمان للمستفيد بعد التحقق من رقم الجوال
-        if (role == 'beneficiary') {
-          final pdfBytes = widget.socialSecurityPdfBytes;
-
-          if (pdfBytes == null || pdfBytes.isEmpty) {
-            throw Exception('ملف الضمان الاجتماعي غير موجود');
-          }
-
-          final storageRef = FirebaseStorage.instance.ref().child(
-            'beneficiary_documents/$uid/social_security.pdf',
-          );
-
-          await storageRef.putData(
-            pdfBytes,
-            SettableMetadata(contentType: 'application/pdf'),
-          );
-
-          uploadedPdfUrl = await storageRef.getDownloadURL();
-        }
-
-        // بيانات المستخدم الأساسية بدون الإيميل
-        final userData = <String, dynamic>{
-          'userId': uid,
-          'firstName': widget.firstName.trim(),
-          'lastName': widget.lastName.trim(),
-          'phone': widget.phone.trim(),
-          'role': role,
-          'createdAt': FieldValue.serverTimestamp(),
-        };
-
-        // بيانات حالة المستفيد داخل Users
-        if (role == 'beneficiary') {
-          userData.addAll({'status': 'pending', 'isVerified': false});
-        }
-
-        // إنشاء المستخدم داخل Users
-        await userRef.set(userData);
-
-        // إنشاء بيانات المستفيد في Collection beneficiaries
-
-        if (role == 'beneficiary') {
-          final beneficiaryRef = FirebaseFirestore.instance
-              .collection('beneficiaries')
-              .doc(uid);
-
-          await beneficiaryRef.set({
-            'userId': uid,
-            'socialSecurityNumber': widget.socialSecurityNumber ?? '',
-            'socialSecurityPdfUrl': uploadedPdfUrl ?? '',
-            'status': 'pending',
-          });
-        }
-
-        if (!mounted) return;
-
-        if (role == 'beneficiary') {
-          AppDesign.showSuccessSnackBar(
-            context,
-            'تم إنشاء حسابك، طلبك قيد المراجعة',
-          );
-
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => BeneficiaryHomePage(userId: uid)),
-            (route) => false,
-          );
-        } else {
-          AppDesign.showSuccessSnackBar(context, 'أهلاً وسهلاً بك');
-
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => DonorHomePage(userId: uid)),
-            (route) => false,
-          );
-        }
-
-        return;
-      }
-
-      // إذا كان حساب التسجيل موجودًا مسبقًا
-      final userData = userDoc.data() ?? {};
-      final role = (userData['role'] ?? '').toString().trim().toLowerCase();
-
-      if (!mounted) return;
+      final role = widget.role.trim().toLowerCase();
 
       if (role == 'donor') {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => DonorHomePage(userId: uid)),
-          (route) => false,
-        );
+        await _createDonor();
       } else if (role == 'beneficiary') {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => BeneficiaryHomePage(userId: uid)),
-          (route) => false,
-        );
-      } else if (role == 'admin') {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => AdminHomePage(userId: uid)),
-          (route) => false,
-        );
+        await _createBeneficiary();
       } else {
-        AppDesign.showErrorSnackBar(context, 'نوع الحساب غير معروف');
+        await _failAndSignOut('نوع الحساب غير معروف');
       }
+    } on AccountLinkedElsewhereException {
+      await _failAndSignOut('رقم الجوال مستخدم مسبقاً');
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
@@ -437,6 +207,8 @@ class _OtpPageState extends State<OtpPage> {
     } catch (e) {
       debugPrint('OTP verification error: $e');
 
+      await AuthService.signOut();
+
       if (!mounted) return;
 
       AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء التحقق من الرمز');
@@ -444,11 +216,102 @@ class _OtpPageState extends State<OtpPage> {
       codeController.clear();
     } finally {
       if (mounted) {
-        setState(() {
-          isVerifying = false;
-        });
+        setState(() => isVerifying = false);
       }
     }
+  }
+
+  Future<void> _openExistingAccount(AppAccount account) async {
+    if (account.isDeleted) {
+      await _failAndSignOut('تم إيقاف هذا الحساب');
+      return;
+    }
+
+    final home = AuthService.homeFor(account);
+
+    if (home == null) {
+      await _failAndSignOut('نوع الحساب غير معروف');
+      return;
+    }
+
+    if (!mounted) return;
+    _goTo(home);
+  }
+
+  Future<void> _createDonor() async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    await FirebaseFirestore.instance.collection('Users').doc(uid).set({
+      'userId': uid,
+      'firstName': widget.firstName.trim(),
+      'lastName': widget.lastName.trim(),
+      'phone': PhoneUtils.toLocal(widget.phone),
+      'role': 'donor',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    if (!mounted) return;
+
+    AppDesign.showSuccessSnackBar(context, 'أهلاً وسهلاً بك');
+    _goTo(DonorHomePage(userId: uid));
+  }
+
+  Future<void> _createBeneficiary() async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final db = FirebaseFirestore.instance;
+
+    final socialSecurityNumber = (widget.socialSecurityNumber ?? '').trim();
+    final pdfBytes = widget.socialSecurityPdfBytes;
+
+    if (socialSecurityNumber.isEmpty || pdfBytes == null || pdfBytes.isEmpty) {
+      throw Exception('بيانات المستفيد غير مكتملة');
+    }
+
+    final pdfPath = 'beneficiary_documents/$uid/social_security.pdf';
+    final storageRef = FirebaseStorage.instance.ref(pdfPath);
+
+    await storageRef.putData(
+      pdfBytes,
+      SettableMetadata(contentType: 'application/pdf'),
+    );
+
+    final pdfUrl = await storageRef.getDownloadURL();
+
+    final batch = db.batch();
+
+    batch.set(db.collection('Users').doc(uid), {
+      'userId': uid,
+      'firstName': widget.firstName.trim(),
+      'lastName': widget.lastName.trim(),
+      'phone': PhoneUtils.toLocal(widget.phone),
+      'role': 'beneficiary',
+      'status': 'pending',
+      'isVerified': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    batch.set(db.collection('beneficiaries').doc(uid), {
+      'userId': uid,
+      'socialSecurityNumber': socialSecurityNumber,
+      'socialSecurityPdfUrl': pdfUrl,
+      'socialSecurityPdfPath': pdfPath,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    try {
+      await batch.commit();
+    } catch (e) {
+      try {
+        await storageRef.delete();
+      } catch (_) {}
+      rethrow;
+    }
+
+    if (!mounted) return;
+
+    AppDesign.showSuccessSnackBar(context, 'تم إنشاء حسابك، طلبك قيد المراجعة');
+    _goTo(BeneficiaryHomePage(userId: uid));
   }
 
   @override
@@ -458,7 +321,6 @@ class _OtpPageState extends State<OtpPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // صورة وشعار مدد
             Stack(
               children: [
                 Container(
