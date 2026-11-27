@@ -98,7 +98,14 @@ class _AddCourierPageState extends State<AddCourierPage> {
               .get(),
         ]);
 
-        final phoneExists = checks.any((result) => result.docs.isNotEmpty);
+        final pendingCourier = await _firestore
+            .collection('couriers')
+            .doc(phone)
+            .get();
+
+        final phoneExists =
+            pendingCourier.exists ||
+            checks.any((result) => result.docs.isNotEmpty);
 
         if (phoneExists) {
           if (!mounted) return;
@@ -125,29 +132,14 @@ class _AddCourierPageState extends State<AddCourierPage> {
 
       if (!confirmed) return;
 
-      final userRef = _firestore.collection('Users').doc();
-      final courierRef = _firestore.collection('couriers').doc();
-      final userId = userRef.id;
-
-      final batch = _firestore.batch();
-
-      batch.set(userRef, {
-        'userId': userId,
+      await _firestore.collection('couriers').doc(phone).set({
         'firstName': firstName,
         'lastName': lastName,
         'phone': phone,
-        'role': 'courier',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      batch.set(courierRef, {
-        'userID': userId,
         'status': status,
         'city': city,
         'completedDeliveries': 0,
       });
-
-      await batch.commit();
 
       if (!mounted) return;
 
