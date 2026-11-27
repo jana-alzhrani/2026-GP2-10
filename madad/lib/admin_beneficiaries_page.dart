@@ -18,11 +18,9 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
   int selectedTab = 0;
 
-  // البحث
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  // كاش لبيانات المستخدمين حتى لا يعاد تحميلها مع كل حرف
   final Map<String, Future<Map<String, dynamic>?>> _userFutures = {};
 
   Future<Map<String, dynamic>?> _getUserDataCached(String userId) {
@@ -87,9 +85,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       ),
     );
   }
-  // =========================================================
-  // Firestore
-  // =========================================================
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _beneficiariesStream() {
     return _firestore.collection('beneficiaries').snapshots();
@@ -120,13 +115,8 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       return userId;
     }
 
-    // لأننا نعتمد أن beneficiary document ID = uid
     return beneficiaryDocumentId;
   }
-
-  // =========================================================
-  // User Data
-  // =========================================================
 
   Future<Map<String, dynamic>?> _getUserData(String userId) async {
     if (userId.trim().isEmpty) return null;
@@ -202,10 +192,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
     });
   }
 
-  // =========================================================
-  // Approve Beneficiary
-  // =========================================================
-
   Future<void> _approveBeneficiary({
     required String beneficiaryId,
     required String beneficiaryUserId,
@@ -226,18 +212,15 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
       final batch = _firestore.batch();
 
-      // تحديث حالة المستفيد
       batch.update(beneficiaryRef, {
         'status': 'approved',
         'approvedAt': FieldValue.serverTimestamp(),
         'approvedBy': widget.userId,
 
-        // إزالة أي بيانات رفض سابقة
         'rejectionReason': FieldValue.delete(),
         'rejectedAt': FieldValue.delete(),
         'rejectedBy': FieldValue.delete(),
 
-        // إزالة بيانات حذف سابقة إن وجدت
         'deletedAt': FieldValue.delete(),
         'deletedBy': FieldValue.delete(),
       });
@@ -263,10 +246,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       AppDesign.showErrorSnackBar(context, 'حدث خطأ أثناء قبول الطلب');
     }
   }
-
-  // =========================================================
-  // Reject Beneficiary
-  // =========================================================
 
   Future<void> _showRejectDialog({
     required String beneficiaryId,
@@ -425,14 +404,12 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
       final batch = _firestore.batch();
 
-      // تحديث حالة المستفيد
       batch.update(beneficiaryRef, {
         'status': 'rejected',
         'rejectionReason': reason.trim(),
         'rejectedAt': FieldValue.serverTimestamp(),
         'rejectedBy': widget.userId,
 
-        // لو كان هناك قبول سابق
         'approvedAt': FieldValue.delete(),
         'approvedBy': FieldValue.delete(),
       });
@@ -447,7 +424,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
       if (!mounted) return;
 
-      // إغلاق Bottom Sheet
       Navigator.of(context).pop();
 
       AppDesign.showSuccessSnackBar(context, 'تم رفض الطلب');
@@ -460,16 +436,11 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
     }
   }
 
-  // =========================================================
-  // Delete Approved Beneficiary
-  // =========================================================
-
   Future<void> _deleteBeneficiary({
     required String beneficiaryId,
     required String beneficiaryUserId,
     required String name,
   }) async {
-    // فحص وجود طلب نشط قبل أي شيء
     try {
       final hasActive = await _hasActiveRequest(beneficiaryUserId);
 
@@ -507,7 +478,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
       final batch = _firestore.batch();
 
-      // 1) Soft Delete
       batch.update(beneficiaryRef, {
         'status': 'deleted',
         'deletedAt': FieldValue.serverTimestamp(),
@@ -520,7 +490,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
         SetOptions(merge: true),
       );
 
-      // 2) تفريغ سلة المستفيد
       final cartSnap = await _firestore
           .collection('cart')
           .where('beneficiaryId', isEqualTo: beneficiaryUserId)
@@ -558,10 +527,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
     return snap.docs.isNotEmpty;
   }
 
-  // =========================================================
-  // Confirm Dialog
-  // =========================================================
-
   Future<bool> _showConfirmDialog({
     required String title,
     required String message,
@@ -575,10 +540,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       confirmText: confirmText,
     );
   }
-
-  // =========================================================
-  // PDF
-  // =========================================================
 
   Future<void> _openPdf(String url) async {
     if (url.trim().isEmpty) {
@@ -602,10 +563,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       AppDesign.showErrorSnackBar(context, 'تعذر فتح الملف');
     }
   }
-
-  // =========================================================
-  // Build
-  // =========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -687,10 +644,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
     );
   }
 
-  // =========================================================
-  // Header
-  // =========================================================
-
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
@@ -724,10 +677,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       ),
     );
   }
-
-  // =========================================================
-  // Tabs
-  // =========================================================
 
   Widget _buildTabs() {
     return Container(
@@ -775,10 +724,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
     );
   }
 
-  // =========================================================
-  // Beneficiary Card
-  // =========================================================
-
   Widget _buildBeneficiaryCard({
     required String beneficiaryId,
     required Map<String, dynamic> beneficiaryData,
@@ -795,7 +740,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
         final name = _getName(userData);
         final phone = _getPhone(userData);
 
-        // البحث بالاسم أو رقم الجوال
         if (_searchQuery.isNotEmpty &&
             snapshot.connectionState != ConnectionState.waiting) {
           final matchesName = name.toLowerCase().contains(_searchQuery);
@@ -934,10 +878,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       ),
     );
   }
-
-  // =========================================================
-  // Beneficiary Details
-  // =========================================================
 
   Future<void> _showBeneficiaryDetails({
     required String beneficiaryId,
@@ -1196,10 +1136,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
     );
   }
 
-  // =========================================================
-  // Detail Item
-  // =========================================================
-
   Widget _buildDetailItem({
     required IconData icon,
     required String label,
@@ -1247,10 +1183,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       ),
     );
   }
-
-  // =========================================================
-  // Empty State
-  // =========================================================
 
   Widget _buildEmptyState() {
     final title = selectedTab == 0
@@ -1307,10 +1239,6 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
       ),
     );
   }
-
-  // =========================================================
-  // Error State
-  // =========================================================
 
   Widget _buildErrorState() {
     return Center(
