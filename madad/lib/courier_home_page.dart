@@ -226,7 +226,7 @@ class _CourierHomePageState extends State<CourierHomePage> {
       await FirebaseFirestore.instance
           .collection('notifications')
           .doc(notificationId)
-          .update({'isRead': true, 'readAt': FieldValue.serverTimestamp()});
+          .update({'isRead': true});
     } catch (e) {
       debugPrint("NOTIFICATION READ ERROR: $e");
     }
@@ -660,7 +660,8 @@ class _CourierHomePageState extends State<CourierHomePage> {
         tx.update(ref, {
           'courierId': FieldValue.delete(),
           'courierTaskStatus': FieldValue.delete(),
-          'acceptedAt': FieldValue.delete(),
+          if (collection == 'donations')
+            'updatedAt': FieldValue.serverTimestamp(),
         });
 
         if (boxes != null) {
