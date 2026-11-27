@@ -54,7 +54,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
     }
   }
 
-  // فتح نافذة تعديل البيانات
   Future<void> _showEditNameSheet() async {
     final result = await showModalBottomSheet<Map<String, String>>(
       context: context,
@@ -80,7 +79,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
     AppDesign.showSuccessSnackBar(context, 'تم تحديث البيانات بنجاح');
   }
 
-  // تسجيل الخروج
   Future<void> _showLogoutDialog() async {
     final confirm = await AppDesign.showAppDialog(
       context: context,
@@ -148,7 +146,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
     );
   }
 
-  // بطاقة البيانات الشخصية
   Widget _buildPersonalCard() {
     return Container(
       width: double.infinity,
@@ -173,7 +170,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
 
               const SizedBox(width: 8),
 
-              // زر تعديل
               InkWell(
                 onTap: _showEditNameSheet,
                 borderRadius: BorderRadius.circular(20),
@@ -315,7 +311,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
     );
   }
 
-  // حول مدد
   Widget _buildAboutMadadCard() {
     return Container(
       width: double.infinity,
@@ -344,7 +339,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
           Divider(color: AppDesign.border, thickness: 1),
           const SizedBox(height: 20),
 
-          // موقع المستودع
           Row(
             textDirection: TextDirection.rtl,
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -436,7 +430,6 @@ class _DonorMorePageState extends State<DonorMorePage> {
           Divider(color: AppDesign.border, thickness: 1),
           const SizedBox(height: 20),
 
-          // ساعات العمل
           Row(
             textDirection: TextDirection.rtl,
             crossAxisAlignment: CrossAxisAlignment.start,
