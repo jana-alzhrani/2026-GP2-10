@@ -369,7 +369,7 @@ class _DonorMorePageState extends State<DonorMorePage> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        'مستودع مدد - واجهة الرياض',
+                        ' واجهة الرياض',
                         textAlign: TextAlign.right,
                         style: AppDesign.bodyStyle.copyWith(
                           color: AppDesign.textSecondary,
