@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 
+import 'auth_service.dart';
 import 'otp_page.dart';
 
 class BeneficiaryRegistrationPage extends StatefulWidget {
@@ -40,7 +40,6 @@ class _BeneficiaryRegistrationPageState
     super.dispose();
   }
 
-  // التحقق من الاسم الكامل
   String? _validatePersonName(String value) {
     final name = value.trim();
 
@@ -55,7 +54,6 @@ class _BeneficiaryRegistrationPageState
     return null;
   }
 
-  // التحقق من رقم الجوال
   String? _validatePhone(String value) {
     final phone = value.trim();
 
@@ -63,14 +61,13 @@ class _BeneficiaryRegistrationPageState
       return 'الرجاء تعبئة الحقل';
     }
 
-    if (!RegExp(r'^05[0-9]{8}$').hasMatch(phone)) {
+    if (!PhoneUtils.isValidLocal(phone)) {
       return 'رقم الجوال غير صحيح';
     }
 
     return null;
   }
 
-  // التحقق من رقم الضمان الاجتماعي
   String? _validateSocialSecurity(String value) {
     final number = value.trim();
 
@@ -85,55 +82,13 @@ class _BeneficiaryRegistrationPageState
     return null;
   }
 
-  // التحقق من تكرار رقم الجوال
-  Future<bool> _checkPhoneExists(String value) async {
-    final phone = value.trim();
-
-    if (!RegExp(r'^05[0-9]{8}$').hasMatch(phone)) {
-      return false;
-    }
-
-    final normalizedPhone = '+966${phone.substring(1)}';
-    final users = FirebaseFirestore.instance.collection('Users');
-
-    final results = await Future.wait([
-      users.where('phone', isEqualTo: phone).get(),
-      users.where('phone', isEqualTo: normalizedPhone).get(),
-      users.where('phoneNumber', isEqualTo: phone).get(),
-      users.where('phoneNumber', isEqualTo: normalizedPhone).get(),
-    ]);
-
-    return results.any((result) => result.docs.isNotEmpty);
-  }
-
-  // التحقق من تكرار رقم الضمان الاجتماعي
-  Future<bool> _checkSocialSecurityExists(String value) async {
-    final number = value.trim();
-
-    if (!RegExp(r'^[0-9]{9}$').hasMatch(number)) {
-      return false;
-    }
-
-    final result = await FirebaseFirestore.instance
-        .collection('beneficiaries')
-        .where('socialSecurityNumber', isEqualTo: number)
-        .limit(1)
-        .get();
-
-    return result.docs.isNotEmpty;
-  }
-
-  // التحقق من جميع الحقول عند الضغط على زر التسجيل
   bool _validateAllFields() {
     final firstNameError = _validatePersonName(_firstNameController.text);
-
     final lastNameError = _validatePersonName(_lastNameController.text);
-
     final phoneError = _validatePhone(_phoneController.text);
     final socialSecurityError = _validateSocialSecurity(
       _socialSecurityController.text,
     );
-
     final fileError = _selectedFile == null
         ? 'الرجاء إرفاق ملف إثبات الضمان الاجتماعي'
         : null;
@@ -153,7 +108,14 @@ class _BeneficiaryRegistrationPageState
         fileError == null;
   }
 
-  // اختيار ملف PDF
+  bool _looksLikePdf(List<int> bytes) {
+    return bytes.length >= 4 &&
+        bytes[0] == 0x25 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x44 &&
+        bytes[3] == 0x46;
+  }
+
   Future<void> _pickPdf() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -175,7 +137,9 @@ class _BeneficiaryRegistrationPageState
         return;
       }
 
-      if (file.bytes == null) {
+      final bytes = file.bytes;
+
+      if (bytes == null || !_looksLikePdf(bytes)) {
         setState(() {
           _fileError = 'تعذر قراءة الملف، يرجى اختياره مرة أخرى';
         });
@@ -198,150 +162,70 @@ class _BeneficiaryRegistrationPageState
     }
   }
 
-  // إرسال طلب التسجيل
   Future<void> _submitRegistration() async {
+    if (_isLoading) return;
+
     FocusScope.of(context).unfocus();
 
-    // التحقق من الحقول وعرض الأخطاء بعد الضغط فقط
-    final fieldsValid = _validateAllFields();
+    if (!_validateAllFields()) return;
 
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
     final phone = _phoneController.text.trim();
     final socialSecurity = _socialSecurityController.text.trim();
-
-    // نتحقق من صحة تنسيق الرقم قبل البحث عن التكرار
-    final phoneFormatValid = RegExp(r'^05[0-9]{8}$').hasMatch(phone);
-
-    final socialSecurityFormatValid = RegExp(
-      r'^[0-9]{9}$',
-    ).hasMatch(socialSecurity);
+    final file = _selectedFile!;
 
     setState(() {
       _isLoading = true;
     });
 
-    try {
-      bool phoneExists = false;
-      bool socialSecurityExists = false;
+    await AuthService.sendCode(
+      phone: phone,
+      onCodeSent: (verificationId, resendToken) {
+        if (!mounted) return;
 
-      // فحص تكرار الجوال حتى لو كانت حقول أخرى فارغة
-      if (phoneFormatValid) {
-        phoneExists = await _checkPhoneExists(phone);
-      }
-
-      // فحص تكرار الضمان حتى لو كانت حقول أخرى فارغة
-      if (socialSecurityFormatValid) {
-        socialSecurityExists = await _checkSocialSecurityExists(socialSecurity);
-      }
-
-      if (!mounted) return;
-
-      // إظهار تنبيهات التكرار مع تنبيهات الحقول الناقصة
-      setState(() {
-        if (phoneExists) {
-          _phoneError = 'رقم الجوال مستخدم مسبقاً';
-        }
-
-        if (socialSecurityExists) {
-          _socialSecurityError = 'رقم الضمان الاجتماعي مسجل مسبقاً';
-        }
-      });
-
-      // إذا كان هناك حقل ناقص أو رقم مكرر، نوقف التسجيل
-      if (!fieldsValid || phoneExists || socialSecurityExists) {
         setState(() {
           _isLoading = false;
         });
-        return;
-      }
 
-      final firstName = _firstNameController.text.trim();
-      final lastName = _lastNameController.text.trim();
-
-      final normalizedPhone = '+966${phone.substring(1)}';
-
-      // إرسال رمز التحقق إلى الجوال
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: normalizedPhone,
-
-        verificationCompleted: (PhoneAuthCredential credential) {},
-
-        verificationFailed: (FirebaseAuthException e) {
-          debugPrint('OTP ERROR CODE: ${e.code}');
-          debugPrint('OTP ERROR MESSAGE: ${e.message}');
-
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-            });
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'خطأ ${e.code}: ${e.message ?? "تعذر إرسال رمز التحقق"}',
-                ),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 8),
-              ),
-            );
-          }
-        },
-
-        codeSent: (String verificationId, int? resendToken) {
-          if (!mounted) return;
-
-          setState(() {
-            _isLoading = false;
-          });
-
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OtpPage(
-                correctCode: verificationId,
-                firstName: firstName,
-                lastName: lastName,
-                phone: phone,
-                isLogin: false,
-                role: 'beneficiary',
-                socialSecurityNumber: socialSecurity,
-                socialSecurityPdfBytes: _selectedFile!.bytes!,
-                socialSecurityPdfName: _selectedFile!.name,
-              ),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OtpPage(
+              verificationId: verificationId,
+              resendToken: resendToken,
+              firstName: firstName,
+              lastName: lastName,
+              phone: phone,
+              isLogin: false,
+              role: 'beneficiary',
+              socialSecurityNumber: socialSecurity,
+              socialSecurityPdfBytes: file.bytes!,
+              socialSecurityPdfName: file.name,
             ),
-          );
-        },
+          ),
+        );
+      },
+      onError: (error) {
+        if (!mounted) return;
 
-        codeAutoRetrievalTimeout: (String verificationId) {},
-      );
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+        });
 
-      setState(() {
-        _isLoading = false;
-      });
+        final message = error is FirebaseAuthException
+            ? 'خطأ ${error.code}: ${error.message ?? "تعذر إرسال رمز التحقق"}'
+            : 'تعذر إرسال رمز التحقق، يرجى المحاولة مرة أخرى';
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message ?? 'تعذر إرسال رمز التحقق'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } catch (e) {
-      debugPrint('Beneficiary registration error: $e');
-
-      if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تعذر إرسال رمز التحقق، يرجى المحاولة مرة أخرى'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -354,7 +238,6 @@ class _BeneficiaryRegistrationPageState
           child: SingleChildScrollView(
             child: Column(
               children: [
-                // صورة مدد
                 Stack(
                   children: [
                     Container(
@@ -394,7 +277,6 @@ class _BeneficiaryRegistrationPageState
 
                 const SizedBox(height: 12),
 
-                // الاسم الأول
                 _buildField(
                   label: 'الاسم الأول',
                   icon: Icons.person,
@@ -408,7 +290,6 @@ class _BeneficiaryRegistrationPageState
                   },
                 ),
 
-                // اسم العائلة
                 _buildField(
                   label: 'الاسم الاخير',
                   icon: Icons.person,
@@ -422,7 +303,6 @@ class _BeneficiaryRegistrationPageState
                   },
                 ),
 
-                // رقم الجوال
                 _buildField(
                   label: 'رقم الجوال',
                   icon: Icons.phone,
@@ -440,7 +320,6 @@ class _BeneficiaryRegistrationPageState
                   },
                 ),
 
-                // رقم الضمان الاجتماعي
                 _buildField(
                   label: 'رقم الضمان الاجتماعي',
                   icon: Icons.badge,
@@ -458,7 +337,6 @@ class _BeneficiaryRegistrationPageState
                   },
                 ),
 
-                // إثبات الضمان الاجتماعي
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
@@ -535,7 +413,6 @@ class _BeneficiaryRegistrationPageState
 
                 const SizedBox(height: 20),
 
-                // زر إرسال طلب التسجيل
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: SizedBox(
@@ -573,7 +450,6 @@ class _BeneficiaryRegistrationPageState
 
                 const SizedBox(height: 20),
 
-                // تنبيه للمستفيد
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Container(
@@ -610,7 +486,6 @@ class _BeneficiaryRegistrationPageState
     );
   }
 
-  // تصميم حقول الإدخال
   Widget _buildField({
     required String label,
     required IconData icon,
