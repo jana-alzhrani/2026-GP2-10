@@ -27,13 +27,18 @@ void main() async {
   runApp(const MyApp());
 }
 
+String _routeUserId(BuildContext context) {
+  return (ModalRoute.of(context)?.settings.arguments as String?) ??
+      FirebaseAuth.instance.currentUser?.uid ??
+      '';
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final userId = user?.uid ?? '';
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -43,50 +48,21 @@ class MyApp extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginPage(),
         '/roleSelection': (context) => const RoleSelectionPage(),
-        '/signup': (context) => SignUpPage(),
+        '/signup': (context) => const SignUpPage(),
         '/welcome': (context) => const WelcomePage(),
 
-        '/donorHome': (context) {
-          final uid =
-              (ModalRoute.of(context)?.settings.arguments as String?) ??
-              FirebaseAuth.instance.currentUser?.uid ??
-              '';
+        '/donorHome': (context) => DonorHomePage(userId: _routeUserId(context)),
 
-          return DonorHomePage(userId: uid);
-        },
+        '/beneficiaryHome': (context) =>
+            BeneficiaryHomePage(userId: _routeUserId(context)),
 
-        '/beneficiaryHome': (context) {
-          final uid =
-              (ModalRoute.of(context)?.settings.arguments as String?) ?? userId;
+        '/addDonation': (context) =>
+            AddDonationPage(userId: _routeUserId(context)),
 
-          return BeneficiaryHomePage(userId: uid);
-        },
+        '/viewDonation': (context) =>
+            ViewDonationPage(userId: _routeUserId(context)),
 
-        '/addDonation': (context) {
-          final uid =
-              (ModalRoute.of(context)?.settings.arguments as String?) ??
-              FirebaseAuth.instance.currentUser?.uid ??
-              '';
-
-          return AddDonationPage(userId: uid);
-        },
-        '/viewDonation': (context) {
-          final uid =
-              (ModalRoute.of(context)?.settings.arguments as String?) ??
-              FirebaseAuth.instance.currentUser?.uid ??
-              '';
-
-          return ViewDonationPage(userId: uid);
-        },
-
-        '/donorMore': (context) {
-          final uid =
-              (ModalRoute.of(context)?.settings.arguments as String?) ??
-              FirebaseAuth.instance.currentUser?.uid ??
-              '';
-
-          return DonorMorePage(userId: uid);
-        },
+        '/donorMore': (context) => DonorMorePage(userId: _routeUserId(context)),
 
         '/donorDelivery': (context) {
           final donationId =
@@ -95,28 +71,13 @@ class MyApp extends StatelessWidget {
           return DonorDeliveryPage(donationId: donationId);
         },
 
-        '/courierHome': (context) {
-          final uid =
-              (ModalRoute.of(context)?.settings.arguments as String?) ??
-              FirebaseAuth.instance.currentUser?.uid ??
-              '';
+        '/courierHome': (context) =>
+            CourierHomePage(userId: _routeUserId(context)),
 
-          return CourierHomePage(userId: uid);
-        },
-        // صفحة إدارة المستفيدين
-        '/adminBeneficiaries': (context) {
-          final uid =
-              (ModalRoute.of(context)?.settings.arguments as String?) ??
-              FirebaseAuth.instance.currentUser?.uid ??
-              '';
+        '/adminBeneficiaries': (context) =>
+            AdminBeneficiariesPage(userId: _routeUserId(context)),
 
-          return AdminBeneficiariesPage(userId: uid);
-        },
-
-        // صفحة إدارة المناديب
-        '/adminCouriers': (context) {
-          return const CourierManagementPage();
-        },
+        '/adminCouriers': (context) => const CourierManagementPage(),
       },
     );
   }
