@@ -51,7 +51,8 @@ class _CourierTasksPageState extends State<CourierTasksPage> {
         tx.update(ref, {
           'courierId': widget.userId,
           'courierTaskStatus': 'active',
-          'acceptedAt': FieldValue.serverTimestamp(),
+          if (collection == 'donations')
+            'updatedAt': FieldValue.serverTimestamp(),
         });
         for (final b in boxes.docs) {
           tx.update(b.reference, {'courierId': widget.userId});
