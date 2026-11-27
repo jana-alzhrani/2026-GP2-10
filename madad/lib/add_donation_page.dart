@@ -25,8 +25,6 @@ class AddDonationPage extends StatefulWidget {
 class _AddDonationPageState extends State<AddDonationPage> {
   bool inputsLocked = false;
 
-  // يمنع الحفظ المزدوج للصندوق (ضغطتين = صندوقين)
-  // ويمنع الرجوع أثناء الحفظ أو الحذف
   bool _saving = false;
 
   String? selectedGender;
@@ -61,46 +59,9 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
   String? generalSize;
 
-  // ============================================================
-  // Controllers حقول وصف القطع
-  // ============================================================
-
-  final Map<String, TextEditingController> _descControllers = {};
-
-  TextEditingController _descCtrl(int box, int idx) {
-    return _descControllers.putIfAbsent(
-      '${box}_$idx',
-      () => TextEditingController(text: boxes[box]![idx]['description'] ?? ''),
-    );
-  }
-
-  void _disposeDescController(String key) {
-    final ctrl = _descControllers.remove(key);
-    if (ctrl == null) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ctrl.dispose();
-    });
-  }
-
-  void _clearDescControllers(int box) {
-    final keys = _descControllers.keys
-        .where((k) => k.startsWith('${box}_'))
-        .toList();
-
-    for (final k in keys) {
-      _disposeDescController(k);
-    }
-  }
-
   @override
   void dispose() {
     _itemCountController.dispose();
-
-    for (final c in _descControllers.values) {
-      c.dispose();
-    }
-    _descControllers.clear();
 
     super.dispose();
   }
@@ -110,23 +71,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
     return selectedAgeGroup!['label'] == 'بالغون';
   }
-
-  bool needsSize(String? type) {
-    return [
-      "قميص",
-      "تيشيرت",
-      "كنزة",
-      "بنطلون",
-      "تنورة",
-      "فستان",
-      "جاكيت",
-      "معطف",
-      "ثوب",
-      "عباية",
-    ].contains(type);
-  }
-
-  bool isShoe(String? type) => type == "حذاء";
 
   Map<String, String> typeMap = {
     "shirt": "قميص",
@@ -150,10 +94,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
     "gloves": "قفازات",
   };
 
-  // ============================================================
-  // عدد القطع
-  // ============================================================
-
   void _updateItemCount(String value) {
     setState(() {
       itemCountError = null;
@@ -168,14 +108,7 @@ class _AddDonationPageState extends State<AddDonationPage> {
       return;
     }
 
-    final parsed = int.tryParse(value);
-
-    if (parsed == null) {
-      setState(() {
-        itemCountError = "الرجاء إدخال أرقام فقط";
-      });
-      return;
-    }
+    final parsed = int.tryParse(value) ?? 101;
 
     if (parsed > 100) {
       setState(() {
@@ -215,10 +148,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
     setState(() {});
   }
 
-  // ============================================================
-  // اختيار مصدر الصورة
-  // ============================================================
-
   Future<ImageSource?> _showImageSourceBottomSheet() async {
     return await showModalBottomSheet<ImageSource>(
       context: context,
@@ -241,7 +170,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // مؤشر السحب
                   Container(
                     width: 45,
                     height: 5,
@@ -253,7 +181,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
                   AppGap.md,
 
-                  // العنوان
                   Row(
                     children: [
                       AppGap.wMD,
@@ -275,7 +202,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
                   AppGap.lg,
 
-                  // الكاميرا
                   _buildImageSourceOption(
                     icon: Icons.camera_alt_outlined,
                     title: "التقاط صورة",
@@ -287,7 +213,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
                   AppGap.sm,
 
-                  // المعرض
                   _buildImageSourceOption(
                     icon: Icons.photo_library_outlined,
                     title: "اختيار من المعرض",
@@ -299,7 +224,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
                   AppGap.md,
 
-                  // إلغاء
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton(
@@ -331,10 +255,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
     );
   }
 
-  // ============================================================
-  // تصميم خيار الكاميرا / المعرض
-  // ============================================================
-
   Widget _buildImageSourceOption({
     required IconData icon,
     required String title,
@@ -354,7 +274,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
         ),
         child: Row(
           children: [
-            // الأيقونة
             Container(
               width: 52,
               height: 52,
@@ -367,7 +286,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
             AppGap.wMD,
 
-            // النص
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -394,14 +312,7 @@ class _AddDonationPageState extends State<AddDonationPage> {
     );
   }
 
-  // ============================================================
-  // اختيار صورة القطعة
-  // - الصورة الجديدة ما تنحفظ إلا بعد ما يقبلها الفحص
-  // - لو انرفضت أو فشل الفحص نرجّع القطعة لحالتها السابقة
-  // ============================================================
-
   Future<void> _pickItemImage(int box, int index) async {
-    // لا نغيّر الصورة أثناء فحص صورة سابقة لنفس القطعة
     if (boxes[box]![index]['error'] == "جاري الفحص...") return;
 
     final ImageSource? source = await _showImageSourceBottomSheet();
@@ -411,8 +322,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
     final ImagePicker picker = ImagePicker();
 
     try {
-      // ✅ تصغير أبعاد الصورة: صور الكاميرا كبيرة جداً (12MP+) وتفشل
-      // في فك الترميز داخل القوائم. 1024px كافية للعرض والفحص.
       final XFile? image = await picker.pickImage(
         source: source,
         imageQuality: 70,
@@ -426,14 +335,13 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
       if (!mounted) return;
 
-      // نسخة من القطعة قبل التغيير عشان نرجعها لو الصورة الجديدة ما نفعت
       final Map<String, dynamic> previous = Map<String, dynamic>.from(
         boxes[box]![index],
       );
 
       setState(() {
         boxes[box]![index]['image'] = bytes;
-        // الصورة الجديدة غير موثقة لين ينجح الفحص
+
         boxes[box]![index]['isValid'] = false;
         boxes[box]![index]['description'] = '';
         boxes[box]![index]['error'] = null;
@@ -464,14 +372,9 @@ class _AddDonationPageState extends State<AddDonationPage> {
     }
   }
 
-  // ============================================================
-  // رفع الصورة إلى Firebase Storage
-  // ============================================================
-
   Future<Map<String, String>> uploadImage(Uint8List bytes, String path) async {
     final ref = FirebaseStorage.instance.ref().child(path);
 
-    // ✅ تحديد نوع الملف صراحة (بدونه يتخزن application/octet-stream)
     await ref.putData(
       bytes,
       SettableMetadata(contentType: _detectMime(bytes, 'image/jpeg')),
@@ -481,10 +384,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
 
     return {'url': url, 'path': ref.fullPath};
   }
-
-  // ============================================================
-  // السماح بفتح الصندوق
-  // ============================================================
 
   bool canOpenBox() {
     if (selectedGender == null) return false;
@@ -498,18 +397,9 @@ class _AddDonationPageState extends State<AddDonationPage> {
     return true;
   }
 
-  // ============================================================
-  // فحص الصورة باستخدام Gemini
-  // ============================================================
-
-  // ============================================================
-  // قراءة رد Gemini (JSON)
-  // ============================================================
-
   Map<String, dynamic>? _parseGeminiJson(String text) {
     var cleaned = text.trim();
 
-    // أحياناً يرجع الرد داخل ```json ... ```
     if (cleaned.startsWith('```')) {
       cleaned = cleaned
           .replaceFirst(RegExp(r'^```[a-zA-Z]*'), '')
@@ -529,7 +419,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
     }
   }
 
-  // نوع الصورة من أول بايتات الملف (WEBP / PNG / JPEG) عشان Gemini يقرأها صح
   String _detectMime(Uint8List bytes, String? fallback) {
     if (bytes.length > 12 &&
         String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
@@ -549,8 +438,6 @@ class _AddDonationPageState extends State<AddDonationPage> {
     return fallback ?? 'image/jpeg';
   }
 
-  /// يرجع true لو الصورة صالحة (ويعبّي النوع والوصف)،
-  /// وfalse لو انرفضت أو فشل الفحص. الاستعادة تتم عند المستدعي.
   Future<bool> _verifyImageWithGemini(
     int box,
     int index,
@@ -628,8 +515,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
       final geminiJson = _parseGeminiJson(result);
 
-      // لو الرد مو JSON نرجع للصيغة القديمة (Yes - Type)
-      // صالحة = Gemini قال valid + النوع من أنواعنا (أي شيء ثاني يُرفض)
       final bool isValid = geminiJson != null
           ? geminiJson['valid'] == true &&
                 typeMap.containsKey(
@@ -658,7 +543,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
       }
 
       setState(() {
-        // الوصف القصير (للموديل، ما يظهر للمتبرع)
         boxes[box]![index]['description'] =
             (geminiJson?['shortDescription'] ?? '').toString().trim();
 
@@ -666,8 +550,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
         boxes[box]![index]['error'] = null;
 
-        // النوع اللي اكتشفه Gemini للصورة الجديدة هو المعتمد،
-        // عشان ما يبقى نوع قديم مع وصف صورة ثانية
         if (detectedType != null) {
           if (boxes[box]![index]['type'] != detectedType) {
             boxes[box]![index]['size'] = null;
@@ -688,10 +570,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
     }
   }
 
-  // ============================================================
-  // إنشاء التبرع
-  // ============================================================
-
   Future<void> createDonationIfNeeded() async {
     if (donationId != null) return;
 
@@ -710,13 +588,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
     });
 
     donationId = doc.id;
-
-    print("NEW donationId => $donationId");
   }
-
-  // ============================================================
-  // التحقق من الصندوق
-  // ============================================================
 
   bool validateBoxBeforeSave(int box) {
     final items = boxes[box]!;
@@ -742,13 +614,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
     return true;
   }
 
-  // ============================================================
-  // حفظ الصندوق (كل قطعة دوكمنت في كولكشن items)
-  // لو فشل الحفظ قبل الـ commit نحذف الصور اللي انرفعت للتو
-  // ============================================================
-
   Future<void> _submitBox(int box) async {
-    // ✅ منع الحفظ المزدوج
     if (_saving) return;
 
     if (!validateBoxBeforeSave(box)) {
@@ -765,11 +631,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
     if (!confirm) return;
 
-    // ممكن ينضغط مرتين وقت الحوار
     if (_saving) return;
     setState(() => _saving = true);
 
-    final List<String> uploadedPaths = []; // للتنظيف لو فشل الحفظ
+    final List<String> uploadedPaths = [];
     bool committed = false;
 
     try {
@@ -781,10 +646,8 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
       final items = boxes[box]!;
 
-      // 1) رفع الصور أولاً
       final List<Map<String, String>> uploads = [];
 
-      // اسم فريد لكل رفعة عشان ما يكتب ملف فوق ملف
       final int stamp = DateTime.now().millisecondsSinceEpoch;
 
       for (int i = 0; i < items.length; i++) {
@@ -793,13 +656,11 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
         final Uint8List imageBytes = items[i]['image'];
 
-        // نسجل المسار قبل الرفع، عشان لو فشل الرفع نصف نصف ننظف كل شي
         uploadedPaths.add(filePath);
 
         uploads.add(await uploadImage(imageBytes, filePath));
       }
 
-      // 2) كتابة الصندوق + القطع دفعة وحدة (يا الكل يتحفظ يا ولا شي)
       final batch = firestore.batch();
 
       final boxRef = firestore.collection('donation_boxes').doc();
@@ -816,7 +677,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      final List<Map<String, dynamic>> toEmbed = []; // للتوصية بعد الحفظ
+      final List<Map<String, dynamic>> toEmbed = [];
 
       for (int i = 0; i < items.length; i++) {
         final itemRef = firestore.collection('items').doc();
@@ -827,8 +688,8 @@ If it is valid, answer only with JSON (no extra text) in this format:
         });
 
         batch.set(itemRef, {
-          'boxId': boxRef.id, // ربط بالصندوق
-          'donationId': donationId, // ربط بالتبرع
+          'boxId': boxRef.id,
+          'donationId': donationId,
           'donorId': user.uid,
           'boxNumber': box,
           'itemNumber': i + 1,
@@ -845,7 +706,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
       await batch.commit();
       committed = true;
 
-      // بصمة كل قطعة للتوصية (بالخلفية، ما تأخر الحفظ)
       Recommender.embedInBackground(toEmbed);
 
       if (!mounted) return;
@@ -863,14 +723,11 @@ If it is valid, answer only with JSON (no extra text) in this format:
           },
         );
 
-        _clearDescControllers(box);
-
         savedBoxes.add(box);
 
         openedBox = null;
       });
     } catch (e) {
-      // الصور اللي انرفعت وما انحفظ الصندوق صارت يتيمة، نحذفها
       if (!committed) {
         await Future.wait(
           uploadedPaths.map((p) async {
@@ -889,21 +746,11 @@ If it is valid, answer only with JSON (no extra text) in this format:
     }
   }
 
-  // ============================================================
-  // هل كل الصناديق محفوظة؟
-  // ============================================================
-
   bool allBoxesSaved() {
     return savedBoxes.length == totalBoxes;
   }
 
-  // ============================================================
-  // الرجوع
-  // يحذف التبرع الحالي: الدوكمنتات في batch واحد + الصور من Storage
-  // ============================================================
-
-  Future<void> _showLogoutDialog() async {
-    // ما نرجع أثناء حفظ صندوق (ممكن يحذف شي وهو يتكتب)
+  Future<void> _confirmDiscard() async {
     if (_saving) return;
 
     final confirm = await AppDesign.showAppDialog(
@@ -948,7 +795,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
         await batch.commit();
 
-        // بعد ما انحذفت الدوكمنتات نحذف الصور من Storage
         await Future.wait(
           imagePaths.map((p) async {
             try {
@@ -978,18 +824,13 @@ If it is valid, answer only with JSON (no extra text) in this format:
     );
   }
 
-  // ============================================================
-  // BUILD
-  // ============================================================
-
   @override
   Widget build(BuildContext context) {
-    // PopScope: زر الرجوع في الجوال (والإيماءة) يمر على نفس نافذة التأكيد
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        _showLogoutDialog();
+        _confirmDiscard();
       },
       child: Directionality(
         textDirection: TextDirection.rtl,
@@ -1000,7 +841,7 @@ If it is valid, answer only with JSON (no extra text) in this format:
             title: const Text("إضافة تبرع"),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back),
-              onPressed: _saving ? null : _showLogoutDialog,
+              onPressed: _saving ? null : _confirmDiscard,
             ),
           ),
 
@@ -1009,9 +850,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ==================================================
-                // الجنس
-                // ==================================================
                 DropdownButtonFormField<String>(
                   decoration: const InputDecoration(
                     labelText: "الجنس",
@@ -1032,9 +870,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
                 AppGap.md,
 
-                // ==================================================
-                // العمر
-                // ==================================================
                 DropdownButtonFormField<Map<String, dynamic>>(
                   decoration: const InputDecoration(
                     labelText: "الفئة العمرية",
@@ -1056,9 +891,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
                   value: selectedAgeGroup,
                 ),
 
-                // ==================================================
-                // المقاس العام
-                // ==================================================
                 if (ageNeedsSize()) ...[
                   AppGap.md,
 
@@ -1083,9 +915,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
                 AppGap.md,
 
-                // ==================================================
-                // عدد القطع
-                // ==================================================
                 TextField(
                   controller: _itemCountController,
                   keyboardType: TextInputType.number,
@@ -1115,9 +944,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
                 AppGap.lg,
 
-                // ==================================================
-                // الصناديق
-                // ==================================================
                 if (totalBoxes > 0 && openedBox == null)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1214,9 +1040,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
                     ],
                   ),
 
-                // ==================================================
-                // داخل الصندوق
-                // ==================================================
                 if (openedBox != null)
                   Column(
                     children: [
@@ -1257,9 +1080,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
                                 Row(
                                   children: [
-                                    // ==================================================
-                                    // الصورة
-                                    // ==================================================
                                     GestureDetector(
                                       onTap: _saving
                                           ? null
@@ -1308,9 +1128,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
                                     AppGap.wMD,
 
-                                    // ==================================================
-                                    // نوع القطعة
-                                    // ==================================================
                                     Expanded(
                                       child: Column(
                                         children: [
@@ -1358,9 +1175,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
                                             },
                                           ),
 
-                                          // ==================================================
-                                          // مقاس الحذاء
-                                          // ==================================================
                                           if (item['type'] == "حذاء")
                                             DropdownButton<String>(
                                               hint: const Text("مقاس الحذاء"),
@@ -1407,9 +1221,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
                       AppGap.lg,
 
-                      // ==================================================
-                      // حفظ الصندوق (معطّل لين تكتمل كل البيانات أو أثناء الحفظ)
-                      // ==================================================
                       ElevatedButton(
                         onPressed:
                             (!_saving && validateBoxBeforeSave(openedBox!))
@@ -1432,9 +1243,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
                 AppGap.lg,
 
-                // ==================================================
-                // تم
-                // ==================================================
                 ElevatedButton(
                   onPressed: (totalBoxes > 0 && allBoxesSaved() && !_saving)
                       ? () async {
