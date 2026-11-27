@@ -152,7 +152,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
         'donorsCount': publishedDonorIds.length,
         'clothingCount': totalDeliveredItems ~/ 5,
         'familiesCount': beneficiariesSnapshot.docs.length,
-        'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       debugPrint('Error publishing public stats: $e');
