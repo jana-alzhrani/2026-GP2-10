@@ -212,18 +212,7 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
       final batch = _firestore.batch();
 
-      batch.update(beneficiaryRef, {
-        'status': 'approved',
-        'approvedAt': FieldValue.serverTimestamp(),
-        'approvedBy': widget.userId,
-
-        'rejectionReason': FieldValue.delete(),
-        'rejectedAt': FieldValue.delete(),
-        'rejectedBy': FieldValue.delete(),
-
-        'deletedAt': FieldValue.delete(),
-        'deletedBy': FieldValue.delete(),
-      });
+      batch.update(beneficiaryRef, {'status': 'approved'});
 
       _addBeneficiaryNotificationToBatch(
         batch: batch,
@@ -404,15 +393,7 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
       final batch = _firestore.batch();
 
-      batch.update(beneficiaryRef, {
-        'status': 'rejected',
-        'rejectionReason': reason.trim(),
-        'rejectedAt': FieldValue.serverTimestamp(),
-        'rejectedBy': widget.userId,
-
-        'approvedAt': FieldValue.delete(),
-        'approvedBy': FieldValue.delete(),
-      });
+      batch.update(beneficiaryRef, {'status': 'rejected'});
 
       _addBeneficiaryNotificationToBatch(
         batch: batch,
@@ -478,17 +459,7 @@ class _AdminBeneficiariesPageState extends State<AdminBeneficiariesPage> {
 
       final batch = _firestore.batch();
 
-      batch.update(beneficiaryRef, {
-        'status': 'deleted',
-        'deletedAt': FieldValue.serverTimestamp(),
-        'deletedBy': widget.userId,
-      });
-
-      batch.set(
-        _firestore.collection('Users').doc(beneficiaryUserId),
-        {'status': 'deleted'},
-        SetOptions(merge: true),
-      );
+      batch.update(beneficiaryRef, {'status': 'deleted'});
 
       final cartSnap = await _firestore
           .collection('cart')
