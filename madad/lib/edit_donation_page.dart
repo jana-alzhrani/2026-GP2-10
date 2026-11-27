@@ -95,8 +95,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
   late final List<String> _typeOptions = typeMap.values.toList();
   final List<String> _shoeSizes = List.generate(28, (i) => (20 + i).toString());
 
-  // ============================================================
-
   Map<String, dynamic>? _findAgeGroupByLabel(String? label) {
     if (label == null || label.trim().isEmpty) return null;
 
@@ -125,7 +123,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     return true;
   }
 
-  // هل القطعة لها صورة (جديدة أو محفوظة)؟
   bool _hasImage(Map<String, dynamic> item) {
     if (item['image'] != null) return true;
     return (item['imageUrl'] ?? '').toString().isNotEmpty;
@@ -168,7 +165,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
                   (m['imageUrl'] ?? '').toString().isNotEmpty;
               m['needsEmbed'] = false;
 
-              // نحتاج مسارات الصور الأصلية عشان نحذف غير المستخدم من Storage
               final p = (m['imagePath'] ?? '').toString();
               if (p.isNotEmpty) paths.add(p);
 
@@ -183,7 +179,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
       savedBoxes = boxes.keys.toSet();
       isLoadingBoxes = false;
 
-      // المقاس العام ما يجي من الـ widget، نجيبه من التبرع نفسه
       _loadGeneralSize();
     } else {
       _loadDonationBoxes();
@@ -207,11 +202,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     }
   }
 
-  // ============================================================
-  // تحميل الصناديق + القطع (من كولكشن items)
-  // الصور تنعرض بـ Image.network، فما نحملها بالذاكرة
-  // ============================================================
-
   Future<void> _loadDonationBoxes() async {
     try {
       final boxesSnap = await firestore
@@ -224,7 +214,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
           .where('donationId', isEqualTo: widget.donationId)
           .get();
 
-      // نجمع القطع حسب الصندوق
       final Map<String, List<Map<String, dynamic>>> itemsByBox = {};
 
       for (final d in itemsSnap.docs) {
@@ -243,7 +232,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
         final int boxNumber = (data['boxNumber'] as num?)?.toInt() ?? 0;
 
-        // القطع من كولكشن items، ولو الصندوق قديم نقرأ من الـ array
         List<Map<String, dynamic>> rawItems = [...(itemsByBox[doc.id] ?? [])];
 
         rawItems.sort((a, b) {
@@ -340,8 +328,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     };
   }
 
-  // يتطبق لما يطلع المستخدم من الحقل (أو يضغط تم)، مو مع كل حرف،
-  // وإذا بيقلّل العدد يسأل قبل حذف القطع.
   Future<void> _updateItemCount(String value) async {
     setState(() => itemCountError = null);
 
@@ -422,7 +408,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
       if (existing.length >= itemsInThisBox) {
         newBoxes[i] = existing.take(itemsInThisBox).toList();
 
-        // الصندوق انقص منه قطع، فنطلب حفظه من جديد
         if (existing.length > itemsInThisBox) newSaved.remove(i);
       } else {
         final extraItems = List.generate(
@@ -432,7 +417,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
 
         newBoxes[i] = [...existing, ...extraItems];
 
-        // الصندوق صار غير محفوظ لأن فيه قطع جديدة
         newSaved.remove(i);
       }
 
@@ -451,7 +435,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     });
   }
 
-  // نفس نافذة اختيار مصدر الصورة الموجودة في صفحة إضافة التبرع.
   Future<ImageSource?> _showImageSourceBottomSheet() async {
     return showModalBottomSheet<ImageSource>(
       context: context,
@@ -606,7 +589,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
       return;
     }
 
-    // أثناء فحص صورة ثانية لا نسمح بتغيير نفس القطعة
     if (boxes[box]![index]['error'] == "جاري الفحص...") return;
 
     final source = await _showImageSourceBottomSheet();
@@ -624,7 +606,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
       final Uint8List bytes = await image.readAsBytes();
       if (!mounted) return;
 
-      // نحتفظ بنسخة من القطعة الأصلية عشان نرجعها لو الصورة الجديدة انرفضت
       final Map<String, dynamic> previous = Map<String, dynamic>.from(
         boxes[box]![index],
       );
@@ -667,14 +648,9 @@ class _EditDonationPageState extends State<EditDonationPage> {
     }
   }
 
-  // ============================================================
-  // قراءة رد Gemini (JSON)
-  // ============================================================
-
   Map<String, dynamic>? _parseGeminiJson(String text) {
     var cleaned = text.trim();
 
-    // أحياناً يرجع الرد داخل ```json ... ```
     if (cleaned.startsWith('```')) {
       cleaned = cleaned
           .replaceFirst(RegExp(r'^```[a-zA-Z]*'), '')
@@ -694,7 +670,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     }
   }
 
-  // نوع الصورة من أول بايتات الملف (WEBP / PNG / JPEG) عشان Gemini يقرأها صح
   String _detectMime(Uint8List bytes, String? fallback) {
     if (bytes.length > 12 &&
         String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
@@ -714,8 +689,6 @@ class _EditDonationPageState extends State<EditDonationPage> {
     return fallback ?? 'image/jpeg';
   }
 
-  /// يرجع true لو الصورة صالحة (ويعبّي النوع والوصف)،
-  /// وfalse لو انرفضت أو فشل الفحص. الاستعادة تتم عند المستدعي.
   Future<bool> _verifyImageWithGemini(
     int box,
     int index,
@@ -808,8 +781,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
       final geminiJson = _parseGeminiJson(result);
 
-      // لو الرد مو JSON نرجع للصيغة القديمة (Yes - Type)
-      // صالحة = Gemini قال valid + النوع من أنواعنا (أي شيء ثاني يُرفض)
       final bool isValid = geminiJson != null
           ? geminiJson['valid'] == true &&
                 typeMap.containsKey(
@@ -835,7 +806,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
       }
 
       setState(() {
-        // الوصف القصير (للموديل، ما يظهر للمتبرع)
         boxes[box]![index]['description'] =
             (geminiJson?['shortDescription'] ?? '').toString().trim();
 
@@ -859,10 +829,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
       return false;
     }
   }
-
-  // ============================================================
-  // التحقق
-  // ============================================================
 
   bool _isItemComplete(Map<String, dynamic> item) {
     if (!_hasImage(item)) return false;
@@ -924,14 +890,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
     });
   }
 
-  // ============================================================
-  // حفظ التغييرات
-  // - نحدّث الدوكمنتات الموجودة بنفس الـ ID (حسب رقم الصندوق/القطعة)
-  //   بدل حذف الكل وإعادة إنشائه، عشان ما تنكسر المراجع (سلة، طلبات...)
-  // - نحافظ على status الحالي للتبرع والقطع
-  // - لو فشل الحفظ نحذف الصور اللي انرفعت للتو
-  // ============================================================
-
   Future<void> _saveChanges() async {
     if (!_isAllDataComplete()) {
       AppDesign.showErrorSnackBar(
@@ -958,11 +916,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
     setState(() => isSaving = true);
 
-    final List<String> uploadedNow = []; // للتنظيف لو فشل الحفظ
+    final List<String> uploadedNow = [];
     bool committed = false;
 
     try {
-      // 1) رفع الصور الجديدة بالتوازي (القديمة نحتفظ برابطها ومسارها)
       final int stamp = DateTime.now().millisecondsSinceEpoch;
       final Map<String, Map<String, String>> uploaded = {};
       final Set<String> newPaths = {};
@@ -999,7 +956,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
       await Future.wait(uploads);
 
-      // 2) نقرأ الموجود حاليًا عشان نعيد استخدام الـ IDs
       final donationRef = firestore
           .collection('donations')
           .doc(widget.donationId);
@@ -1033,10 +989,9 @@ If it is valid, answer only with JSON (no extra text) in this format:
         oldItemRefs.putIfAbsent('${b}_$n', () => d.reference);
       }
 
-      // 3) batch واحد: تحديث/إنشاء + حذف اللي ما عاد له وجود
       final batch = firestore.batch();
-      final List<Map<String, dynamic>> toEmbed = []; // للتوصية بعد الحفظ
-      final Set<String> keptPaths = {}; // مسارات الدوكمنتات اللي نستخدمها
+      final List<Map<String, dynamic>> toEmbed = [];
+      final Set<String> keptPaths = {};
 
       batch.update(donationRef, {
         'gender': selectedGender,
@@ -1073,7 +1028,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
             'status': currentStatus,
             'timestamp': FieldValue.serverTimestamp(),
           } else
-            // الصناديق القديمة كانت تخزن القطع في array، ما عاد نحتاجه
             'items': FieldValue.delete(),
         }, SetOptions(merge: true));
 
@@ -1098,8 +1052,8 @@ If it is valid, answer only with JSON (no extra text) in this format:
           }
 
           batch.set(itemRef, {
-            'boxId': boxRef.id, // ربط بالصندوق
-            'donationId': widget.donationId, // ربط بالتبرع
+            'boxId': boxRef.id,
+            'donationId': widget.donationId,
             'donorId': user.uid,
             'boxNumber': boxNumber,
             'itemNumber': i + 1,
@@ -1117,7 +1071,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
         }
       }
 
-      // نحذف فقط اللي انشال فعلاً
       for (final d in oldItemsSnap.docs) {
         if (!keptPaths.contains(d.reference.path)) batch.delete(d.reference);
       }
@@ -1129,12 +1082,10 @@ If it is valid, answer only with JSON (no extra text) in this format:
       await batch.commit();
       committed = true;
 
-      // بصمة التوصية فقط للقطع الجديدة أو اللي تغيرت صورتها/وصفها
       if (toEmbed.isNotEmpty) {
         Recommender.embedInBackground(toEmbed);
       }
 
-      // 4) نحدّث الحالة المحلية عشان أي حفظ ثاني يعيد استخدام الصور
       for (final entry in boxes.entries) {
         for (int i = 0; i < entry.value.length; i++) {
           final up = uploaded['${entry.key}_$i']!;
@@ -1144,7 +1095,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
         }
       }
 
-      // 5) نحذف من Storage الصور اللي ما عادت مستخدمة
       final unused = _originalImagePaths.difference(newPaths);
 
       await Future.wait(
@@ -1168,7 +1118,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
       AppDesign.showSuccessSnackBar(context, 'تم حفظ التغييرات بنجاح');
     } catch (e) {
-      // لو الحفظ فشل قبل الـ commit، الصور اللي انرفعت للتو يتيمة فنحذفها
       if (!committed) {
         for (final p in uploadedNow) {
           try {
@@ -1417,8 +1366,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
                           boxes[openedBox]![idx]['type'] = v;
                           boxes[openedBox]![idx]['size'] = null;
 
-                          // الوصف القديم كان يصف النوع السابق، فنمسحه
-                          // عشان ما يتسرب وصف غلط لموديل التوصية
                           boxes[openedBox]![idx]['description'] = '';
                           boxes[openedBox]![idx]['needsEmbed'] = true;
 
@@ -1512,7 +1459,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
   @override
   Widget build(BuildContext context) {
-    // PopScope: زر الرجوع في الجوال (والإيماءة) يمر على نفس نافذة التأكيد
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -1623,8 +1569,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
 
                       AppGap.lg,
 
-                      // يطبّق العدد عند الخروج من الحقل (إغلاق الكيبورد أو
-                      // الضغط خارجه) وليس فقط عند زر "تم" في الكيبورد
                       Focus(
                         onFocusChange: (hasFocus) {
                           if (!hasFocus && !inputsLocked) {
@@ -1716,7 +1660,6 @@ If it is valid, answer only with JSON (no extra text) in this format:
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
-                                // معطّل لين تكتمل كل بيانات الصندوق
                                 onPressed: _validateOpenedBox(openedBox!)
                                     ? _markCurrentBoxDone
                                     : null,
