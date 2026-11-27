@@ -172,7 +172,6 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
         'beneficiaryId': widget.userId,
         'itemId': widget.itemId,
         'boxId': loadedData['boxId'] ?? '',
-        'donationId': loadedData['donationId'] ?? '',
         'status': 'in_cart',
         'type': (item['type'] ?? '').toString(),
         'description': (item['description'] ?? '').toString(),
@@ -180,7 +179,6 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
         'size': rawSize == 'null' ? '' : rawSize,
         'gender': (item['gender'] ?? '').toString(),
         'ageGroup': _ageLabel(item['ageGroup']),
-        'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (!mounted) return;
