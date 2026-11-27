@@ -72,18 +72,66 @@ class _CourierHomePageState extends State<CourierHomePage> {
     }
   }
 
-  Future<void> _launchWhatsApp(String phone) async {
-    String formattedPhone = phone.trim();
+  Future<void> _launchWhatsApp(String phone, {String message = ''}) async {
+    String formattedPhone = phone.trim().replaceAll(RegExp(r'[^0-9]'), '');
     if (formattedPhone.startsWith('0')) {
-      formattedPhone = '+966${formattedPhone.substring(1)}';
+      formattedPhone = '966${formattedPhone.substring(1)}';
     }
-    final url = Uri.parse('https://wa.me/$formattedPhone');
+    final url = Uri.parse(
+      message.isEmpty
+          ? 'https://wa.me/$formattedPhone'
+          : 'https://wa.me/$formattedPhone?text=${Uri.encodeComponent(message)}',
+    );
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } else {
       if (!mounted) return;
       AppDesign.showErrorSnackBar(context, 'تعذر فتح تطبيق واتساب');
     }
+  }
+
+  String _addressText(dynamic address) {
+    if (address is! Map) return '';
+
+    final nationalAddress = (address['shortNationalAddress'] ?? '')
+        .toString()
+        .trim();
+    final city = (address['city'] ?? '').toString().trim();
+    final district = (address['district'] ?? '').toString().trim();
+
+    final lines = <String>[];
+
+    if (nationalAddress.isNotEmpty) {
+      lines.add('العنوان الوطني المختصر: $nationalAddress');
+    }
+
+    final area = [city, district].where((part) => part.isNotEmpty).join(' - ');
+
+    if (area.isNotEmpty) {
+      lines.add('المدينة والحي: $area');
+    }
+
+    return lines.join('\n');
+  }
+
+  String _whatsAppMessage({
+    required String name,
+    required String intro,
+    dynamic address,
+  }) {
+    final addressText = _addressText(address);
+
+    return [
+      name.isNotEmpty ? 'مرحبًا $name،' : 'مرحبًا،',
+      intro,
+      if (addressText.isNotEmpty) ...[
+        '',
+        'العنوان المسجل لدينا:',
+        addressText,
+        '',
+        'نرجو تأكيد صحة العنوان.',
+      ],
+    ].join('\n');
   }
 
   Future<void> _showNoNotifications() async {
@@ -694,9 +742,9 @@ class _CourierHomePageState extends State<CourierHomePage> {
     return FirebaseFirestore.instance.collection('Users').doc(id).get();
   }
 
-  Widget _whatsAppButton(String phone) {
+  Widget _whatsAppButton(String phone, {String message = ''}) {
     return InkWell(
-      onTap: () => _launchWhatsApp(phone),
+      onTap: () => _launchWhatsApp(phone, message: message),
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1133,14 +1181,22 @@ class _CourierHomePageState extends State<CourierHomePage> {
       builder: (context, userSnap) {
         String name = 'صاحب الطلب';
         String phone = '';
+        String contactName = '';
 
         final userDoc = userSnap.data;
         if (userDoc != null && userDoc.exists) {
           final uData = userDoc.data() as Map<String, dynamic>? ?? {};
           name = '${uData['firstName'] ?? ''} ${uData['lastName'] ?? ''}'
               .trim();
+          contactName = name;
           phone = (uData['phone'] ?? uData['phoneNumber'] ?? '').toString();
         }
+
+        final whatsAppMessage = _whatsAppMessage(
+          name: contactName,
+          intro: 'معك مندوب منصة مدد، وسأقوم باستلام تبرعك.',
+          address: pickupAddressMap,
+        );
 
         return FutureBuilder<QuerySnapshot>(
           future: FirebaseFirestore.instance
@@ -1207,7 +1263,8 @@ class _CourierHomePageState extends State<CourierHomePage> {
                         'الجوال: ${phone.isNotEmpty ? phone : 'غير متوفر'}',
                         style: AppDesign.bodySecondaryStyle,
                       ),
-                      if (phone.isNotEmpty) _whatsAppButton(phone),
+                      if (phone.isNotEmpty)
+                        _whatsAppButton(phone, message: whatsAppMessage),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -1321,14 +1378,26 @@ class _CourierHomePageState extends State<CourierHomePage> {
       builder: (context, userSnap) {
         String name = 'المستفيد';
         String phone = '';
+        String contactName = '';
 
         final userDoc = userSnap.data;
         if (userDoc != null && userDoc.exists) {
           final uData = userDoc.data() as Map<String, dynamic>? ?? {};
           name = '${uData['firstName'] ?? ''} ${uData['lastName'] ?? ''}'
               .trim();
+          contactName = name;
           phone = (uData['phone'] ?? uData['phoneNumber'] ?? '').toString();
         }
+
+        final shortRequestId = doc.id.length > 8
+            ? doc.id.substring(0, 8)
+            : doc.id;
+
+        final whatsAppMessage = _whatsAppMessage(
+          name: contactName,
+          intro: 'معك مندوب منصة مدد، وسأقوم بتوصيل طلبك رقم #$shortRequestId.',
+          address: addressMap,
+        );
 
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
@@ -1374,7 +1443,8 @@ class _CourierHomePageState extends State<CourierHomePage> {
                     'الجوال: ${phone.isNotEmpty ? phone : 'غير متوفر'}',
                     style: AppDesign.bodySecondaryStyle,
                   ),
-                  if (phone.isNotEmpty) _whatsAppButton(phone),
+                  if (phone.isNotEmpty)
+                    _whatsAppButton(phone, message: whatsAppMessage),
                 ],
               ),
               const SizedBox(height: 12),
