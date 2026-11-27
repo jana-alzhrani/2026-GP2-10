@@ -1492,10 +1492,7 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
         final batch = db.batch();
 
         for (final box in pending) {
-          batch.update(box.reference, {
-            'status': 'available',
-            'receivedAtWarehouse': FieldValue.serverTimestamp(),
-          });
+          batch.update(box.reference, {'status': 'available'});
 
           final itemsSnap = await db
               .collection('items')
@@ -1551,10 +1548,7 @@ class _DropoffScanPageState extends State<DropoffScanPage> {
 
       final batch = db.batch();
 
-      batch.update(match.reference, {
-        'status': 'available',
-        'receivedAtWarehouse': FieldValue.serverTimestamp(),
-      });
+      batch.update(match.reference, {'status': 'available'});
 
       for (final it in boxItemsSnap.docs) {
         batch.update(it.reference, {'status': 'available'});
