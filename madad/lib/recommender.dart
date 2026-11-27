@@ -11,7 +11,8 @@ import 'app_design.dart';
 import 'Beneficiary_view_item_page.dart';
 
 class Recommender {
-  static const String serverUrl = 'https://madad-recommender-1066829548492.europe-west1.run.app';
+  static const String serverUrl =
+      'https://madad-recommender-1066829548492.europe-west1.run.app';
   static const String appSecret = '';
 
   static const Map<String, String> arToModelType = {
@@ -39,16 +40,27 @@ class Recommender {
 
   static Future<void> _load() async {
     if (_masks != null) return;
-    final m = jsonDecode(await rootBundle.loadString('assets/model/v4_masks.json'));
+    final m = jsonDecode(
+      await rootBundle.loadString('assets/model/v4_masks.json'),
+    );
     final types = List<String>.from(m['types']);
     _typeIndex = {for (var i = 0; i < types.length; i++) types[i]: i};
     _masks = (m['masks'] as List)
-        .map((row) => (row as List)
-            .map((v) => (v as List).map((x) => (x as num).toDouble()).toList())
-            .toList())
+        .map(
+          (row) => (row as List)
+              .map(
+                (v) => (v as List).map((x) => (x as num).toDouble()).toList(),
+              )
+              .toList(),
+        )
         .toList();
-    final g = jsonDecode(await rootBundle.loadString('assets/model/type_cooccurrence.json'))
-        as Map<String, dynamic>;
+    final g =
+        jsonDecode(
+              await rootBundle.loadString(
+                'assets/model/type_cooccurrence.json',
+              ),
+            )
+            as Map<String, dynamic>;
     _goWith = g.map((k, v) => MapEntry(k, List<String>.from(v)));
   }
 
@@ -97,8 +109,14 @@ class Recommender {
       final res = await http
           .post(
             Uri.parse('$serverUrl/embed'),
-            headers: {'Content-Type': 'application/json', 'x-app-secret': appSecret},
-            body: jsonEncode({'imageUrl': imageUrl, 'description': description}),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-app-secret': appSecret,
+            },
+            body: jsonEncode({
+              'imageUrl': imageUrl,
+              'description': description,
+            }),
           )
           .timeout(const Duration(seconds: 90));
       if (res.statusCode != 200) {
@@ -122,11 +140,13 @@ class Recommender {
 
   static void embedInBackground(List<Map<String, dynamic>> items) {
     for (final it in items) {
-      unawaited(computeAndSaveEmbedding(
-        it['ref'] as DocumentReference<Map<String, dynamic>>,
-        (it['imageUrl'] ?? '').toString(),
-        (it['description'] ?? '').toString(),
-      ));
+      unawaited(
+        computeAndSaveEmbedding(
+          it['ref'] as DocumentReference<Map<String, dynamic>>,
+          (it['imageUrl'] ?? '').toString(),
+          (it['description'] ?? '').toString(),
+        ),
+      );
     }
   }
 
@@ -138,7 +158,8 @@ class Recommender {
   }) async {
     await _load();
     final custom = saudiGoWith[query['type']];
-    if (custom != null) return _rankSaudi(query, candidates, custom, perType, maxTotal);
+    if (custom != null)
+      return _rankSaudi(query, candidates, custom, perType, maxTotal);
     final tq = arToModelType[query['type']];
     final eq = _vec(query['embedding']);
     if (tq == null || eq == null || !_typeIndex!.containsKey(tq)) return [];
@@ -148,14 +169,23 @@ class Recommender {
     for (final c in candidates) {
       final tc = arToModelType[c['type']];
       final ec = _vec(c['embedding']);
-      if (tc == null || ec == null || !wanted.contains(tc) || !_typeIndex!.containsKey(tc)) continue;
-      byType.putIfAbsent(tc, () => []).add({...c, '_score': score(eq, ec, tq, tc)});
+      if (tc == null ||
+          ec == null ||
+          !wanted.contains(tc) ||
+          !_typeIndex!.containsKey(tc))
+        continue;
+      byType.putIfAbsent(tc, () => []).add({
+        ...c,
+        '_score': score(eq, ec, tq, tc),
+      });
     }
     final out = <Map<String, dynamic>>[];
     for (final t in wanted) {
       final list = byType[t];
       if (list == null) continue;
-      list.sort((a, b) => (b['_score'] as double).compareTo(a['_score'] as double));
+      list.sort(
+        (a, b) => (b['_score'] as double).compareTo(a['_score'] as double),
+      );
       out.addAll(list.take(perType));
       if (out.length >= maxTotal) break;
     }
@@ -177,14 +207,23 @@ class Recommender {
       final ar = (c['type'] ?? '').toString();
       final tc = modelTypeOf(ar);
       final ec = _vec(c['embedding']);
-      if (tc == null || ec == null || !wanted.contains(ar) || !_typeIndex!.containsKey(tc)) continue;
-      byType.putIfAbsent(ar, () => []).add({...c, '_score': score(eq, ec, tq, tc)});
+      if (tc == null ||
+          ec == null ||
+          !wanted.contains(ar) ||
+          !_typeIndex!.containsKey(tc))
+        continue;
+      byType.putIfAbsent(ar, () => []).add({
+        ...c,
+        '_score': score(eq, ec, tq, tc),
+      });
     }
     final out = <Map<String, dynamic>>[];
     for (final t in wanted) {
       final list = byType[t];
       if (list == null) continue;
-      list.sort((a, b) => (b['_score'] as double).compareTo(a['_score'] as double));
+      list.sort(
+        (a, b) => (b['_score'] as double).compareTo(a['_score'] as double),
+      );
       out.addAll(list.take(perType));
       if (out.length >= maxTotal) break;
     }
@@ -220,11 +259,24 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
       v is Map ? (v['label'] ?? '').toString() : (v ?? '').toString();
 
   static const _ageOrder = [
-    'رضّع (0-2)', 'أطفال صغار (3-5)', 'أطفال (6-9)', 'أطفال (10-15)', 'بالغون'
+    'رضّع (0-2)',
+    'أطفال صغار (3-5)',
+    'أطفال (6-9)',
+    'أطفال (10-15)',
+    'بالغون',
   ];
   static const _sizeOrder = ['XS - S', 'S - M', 'M - L', 'L - XL'];
   static const _sized = {
-    'قميص', 'تيشيرت', 'كنزة', 'بنطلون', 'تنورة', 'فستان', 'جاكيت', 'معطف', 'ثوب', 'عباية'
+    'قميص',
+    'تيشيرت',
+    'كنزة',
+    'بنطلون',
+    'تنورة',
+    'فستان',
+    'جاكيت',
+    'معطف',
+    'ثوب',
+    'عباية',
   };
 
   static bool _ageClose(String a, String b) {
@@ -274,14 +326,16 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
       myBoxId,
       ...snap.docs.map((d) => (d.data()['boxId'] ?? '').toString()),
     ].where((id) => id.isNotEmpty && !_boxCache.containsKey(id)).toSet();
-    await Future.wait(newBoxIds.map((id) async {
-      try {
-        final s = await _db.collection('donation_boxes').doc(id).get();
-        if (s.exists && s.data() != null) _boxCache[id] = s.data()!;
-      } catch (e) {
-        debugPrint('BOX FETCH ERROR ($id): $e');
-      }
-    }));
+    await Future.wait(
+      newBoxIds.map((id) async {
+        try {
+          final s = await _db.collection('donation_boxes').doc(id).get();
+          if (s.exists && s.data() != null) _boxCache[id] = s.data()!;
+        } catch (e) {
+          debugPrint('BOX FETCH ERROR ($id): $e');
+        }
+      }),
+    );
 
     final mySize = (_boxCache[myBoxId]?['generalSize'] ?? '').toString();
 
@@ -298,22 +352,32 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
           _sized.contains(widget.item['type']) && _sized.contains(data['type']);
       if (!_ageClose(age, a)) continue;
       if (_sized.contains(data['type']) &&
-          age != 'بالغون' && age.isNotEmpty && a.isNotEmpty && a != age) {
+          age != 'بالغون' &&
+          age.isNotEmpty &&
+          a.isNotEmpty &&
+          a != age) {
         continue;
       }
       if (age == 'بالغون' &&
           bothSized &&
-          !_sizeClose(mySize, (box?['generalSize'] ?? '').toString())) continue;
+          !_sizeClose(mySize, (box?['generalSize'] ?? '').toString()))
+        continue;
 
       if (data['embedding'] == null && _requested.add(d.id)) {
-        unawaited(Recommender.computeAndSaveEmbedding(
-          d.reference,
-          (data['imageUrl'] ?? '').toString(),
-          (data['description'] ?? '').toString(),
-        ));
+        unawaited(
+          Recommender.computeAndSaveEmbedding(
+            d.reference,
+            (data['imageUrl'] ?? '').toString(),
+            (data['description'] ?? '').toString(),
+          ),
+        );
         continue;
       }
-      candidates.add({...data, 'itemId': d.id, 'boxId': (data['boxId'] ?? '').toString()});
+      candidates.add({
+        ...data,
+        'itemId': d.id,
+        'boxId': (data['boxId'] ?? '').toString(),
+      });
     }
 
     final ranked = await Recommender.rank(
@@ -336,14 +400,18 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: AppDesign.spaceLG),
-        Text('قطع تناسبها', style: AppDesign.h2Style.copyWith(color: AppDesign.textPrimary)),
+        Text(
+          'قطع تناسبها',
+          style: AppDesign.h2Style.copyWith(color: AppDesign.textPrimary),
+        ),
         const SizedBox(height: AppDesign.spaceSM),
         SizedBox(
           height: 170,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: _results.length,
-            separatorBuilder: (_, __) => const SizedBox(width: AppDesign.spaceMD),
+            separatorBuilder: (_, __) =>
+                const SizedBox(width: AppDesign.spaceMD),
             itemBuilder: (context, i) {
               final r = _results[i];
               final url = (r['imageUrl'] ?? '').toString();
@@ -383,7 +451,9 @@ class _MatchingItemsSectionState extends State<MatchingItemsSection> {
                         padding: const EdgeInsets.all(AppDesign.spaceSM),
                         child: Text(
                           (r['type'] ?? '').toString(),
-                          style: AppDesign.bodyStyle.copyWith(fontWeight: FontWeight.w700),
+                          style: AppDesign.bodyStyle.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
