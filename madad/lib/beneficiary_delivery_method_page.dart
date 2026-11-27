@@ -542,7 +542,6 @@ class _BeneficiaryDeliveryMethodPageState
     );
   }
 
-  /// خطوة مرقّمة داخل بطاقة توضيح المسح
   Widget _scanStep(int number, String text) {
     return Padding(
       padding: const EdgeInsets.only(top: 10),
@@ -581,7 +580,6 @@ class _BeneficiaryDeliveryMethodPageState
     );
   }
 
-  /// بطاقة توضيح: لازم يمسح الباركود لتأكيد الاستلام
   Widget _scanNotice() {
     return Container(
       width: double.infinity,
@@ -665,7 +663,6 @@ class _BeneficiaryDeliveryMethodPageState
           Text(warehouseHours, style: AppDesign.bodySecondaryStyle),
           AppGap.lg,
 
-          // 👇 توضيح مسح الباركود
           _scanNotice(),
 
           AppGap.lg,
@@ -793,7 +790,6 @@ class _BeneficiaryDeliveryMethodPageState
         final itemIds = <String>[];
         final boxIds = <String>{};
 
-        // 1. Read and validate everything first
         for (final entry in widget.cartItems) {
           final itemId = (entry['itemId'] ?? '').toString();
           final cartDocId = (entry['cartDocId'] ?? '').toString();
@@ -836,7 +832,6 @@ class _BeneficiaryDeliveryMethodPageState
           if (boxId.isNotEmpty) boxIds.add(boxId);
         }
 
-        // 2. Create the request
         transaction.set(requestRef, {
           'requestId': requestRef.id,
           'beneficiaryId': widget.userId,
@@ -863,7 +858,6 @@ class _BeneficiaryDeliveryMethodPageState
                 },
         });
 
-        // 3. Reserve the items and take them out of the cart
         for (var i = 0; i < itemRefs.length; i++) {
           transaction.update(itemRefs[i], {
             'status': 'reserved',
