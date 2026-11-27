@@ -788,7 +788,6 @@ class _BeneficiaryDeliveryMethodPageState
         final itemRefs = <DocumentReference<Map<String, dynamic>>>[];
         final cartRefs = <DocumentReference<Map<String, dynamic>>>[];
         final itemIds = <String>[];
-        final boxIds = <String>{};
 
         for (final entry in widget.cartItems) {
           final itemId = (entry['itemId'] ?? '').toString();
@@ -827,22 +826,16 @@ class _BeneficiaryDeliveryMethodPageState
           itemRefs.add(itemRef);
           cartRefs.add(cartRef);
           itemIds.add(itemId);
-
-          final boxId = (itemSnap.data()?['boxId'] ?? '').toString();
-          if (boxId.isNotEmpty) boxIds.add(boxId);
         }
 
         transaction.set(requestRef, {
-          'requestId': requestRef.id,
           'beneficiaryId': widget.userId,
           'courierId': null,
           'status': 'requested',
           'deliveryMethod': selectedMethod,
           'itemIds': itemIds,
           'itemsCount': itemIds.length,
-          'boxIds': boxIds.toList(),
           'createdAt': FieldValue.serverTimestamp(),
-          'deliveredAt': null,
           'deliveryAddress': selectedMethod == 'delivery'
               ? {
                   'city': selectedCity,
@@ -851,11 +844,7 @@ class _BeneficiaryDeliveryMethodPageState
                       .trim()
                       .toUpperCase(),
                 }
-              : {
-                  'warehouseName': warehouseName,
-                  'warehouseLat': warehouseLat,
-                  'warehouseLng': warehouseLng,
-                },
+              : {'warehouseName': warehouseName},
         });
 
         for (var i = 0; i < itemRefs.length; i++) {
