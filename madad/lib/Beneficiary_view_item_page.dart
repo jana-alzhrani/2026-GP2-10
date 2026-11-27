@@ -28,7 +28,6 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
   bool _isAddingToCart = false;
   late final Future<Map<String, dynamic>> _itemFuture;
 
-  // Both streams are created once so they aren't re-created on every rebuild.
   late final Stream<bool> _inCartStreamValue = _inCartStream();
   late final Stream<bool> _itemAvailableStreamValue = _itemAvailableStream();
 
@@ -51,7 +50,6 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
     final boxId = (itemData['boxId'] ?? widget.boxId).toString();
     final donationId = (itemData['donationId'] ?? '').toString();
 
-    // نجيب الجنس والفئة العمرية والمقاس من الصندوق
     if (boxId.isNotEmpty) {
       try {
         final boxSnap = await db.collection('donation_boxes').doc(boxId).get();
@@ -61,7 +59,6 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
           itemData['gender'] = box['gender'] ?? itemData['gender'];
           itemData['ageGroup'] = box['ageGroup'] ?? itemData['ageGroup'];
 
-          // مقاس الحذاء يبقى من القطعة، غيره المقاس العام من الصندوق
           final size = (itemData['size'] ?? '').toString().trim();
           if (size.isEmpty || size == 'null') {
             itemData['size'] = box['generalSize'];
@@ -99,7 +96,6 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
     return value.toString();
   }
 
-  // هل القطعة في سلة المستفيد؟
   Stream<bool> _inCartStream() {
     return FirebaseFirestore.instance
         .collection('cart')
@@ -111,7 +107,6 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
         .map((snap) => snap.docs.isNotEmpty);
   }
 
-  // هل القطعة ما زالت متاحة؟ (تتحدث فورًا لو انحجزت أو انحذفت)
   Stream<bool> _itemAvailableStream() {
     return FirebaseFirestore.instance
         .collection('items')
@@ -127,7 +122,6 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
     try {
       final db = FirebaseFirestore.instance;
 
-      // فحص أخير: القطعة لسا متاحة؟
       final freshItem = await db.collection('items').doc(widget.itemId).get();
       if (!freshItem.exists || freshItem.data()?['status'] != 'available') {
         if (!mounted) return;
@@ -270,12 +264,10 @@ class _BeneficiaryViewItemPageState extends State<BeneficiaryViewItemPage> {
     );
   }
 
-  // زر الإضافة للسلة: يتحدث فورًا حسب حالة القطعة والسلة
   Widget _buildCartButton(Map<String, dynamic> loadedData) {
     return StreamBuilder<bool>(
       stream: _itemAvailableStreamValue,
       builder: (context, availableSnap) {
-        // قبل وصول أول تحديث نعتبرها متاحة (تم التحقق منها عند التحميل)
         final isAvailable = availableSnap.data ?? true;
 
         return StreamBuilder<bool>(
