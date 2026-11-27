@@ -6,11 +6,11 @@ class RoleSelectionPage extends StatefulWidget {
   const RoleSelectionPage({super.key});
 
   @override
-  State createState() => _RoleSelectionPageState();
+  State<RoleSelectionPage> createState() => _RoleSelectionPageState();
 }
 
-class _RoleSelectionPageState extends State {
-  String? selectedRole; // 'donor' or 'beneficiary'
+class _RoleSelectionPageState extends State<RoleSelectionPage> {
+  String? selectedRole;
 
   @override
   Widget build(BuildContext context) {
@@ -32,11 +32,6 @@ class _RoleSelectionPageState extends State {
                         fit: BoxFit.cover,
                       ),
                     ),
-                  ),
-                  Container(
-                    height: 280,
-                    width: double.infinity,
-                    decoration: BoxDecoration(),
                   ),
                   Positioned(
                     top: 40,
@@ -73,7 +68,6 @@ class _RoleSelectionPageState extends State {
 
               const SizedBox(height: 20),
 
-              // Donor Option Card
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
@@ -86,7 +80,6 @@ class _RoleSelectionPageState extends State {
                 ),
               ),
 
-              // Beneficiary Option Card
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
@@ -127,7 +120,6 @@ class _RoleSelectionPageState extends State {
 
               const SizedBox(height: 16),
 
-              // Confirm Button with Role Routing
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: ElevatedButton(
@@ -232,7 +224,7 @@ class _RoleSelectionPageState extends State {
                 ),
               ],
             ),
-            Radio(
+            Radio<String>(
               value: roleValue,
               groupValue: selectedRole,
               activeColor: AppDesign.primary,
