@@ -36,29 +36,15 @@ class _DonorHomePageState extends State<DonorHomePage> {
 
   Future<void> _loadHomeData() async {
     try {
-      final userFuture = FirebaseFirestore.instance
-          .collection('Users')
-          .doc(widget.userId)
-          .get();
-
-      final donationsFuture = FirebaseFirestore.instance
-          .collection('donations')
-          .get();
-
-      final usersFuture = FirebaseFirestore.instance.collection('Users').get();
-
       final results = await Future.wait([
-        userFuture,
-        donationsFuture,
-        usersFuture,
+        FirebaseFirestore.instance.collection('Users').doc(widget.userId).get(),
+        FirebaseFirestore.instance.collection('stats').doc('public').get(),
       ]);
 
       if (!mounted) return;
 
-      final userDoc = results[0] as DocumentSnapshot<Map<String, dynamic>>;
-      final donationsSnapshot =
-          results[1] as QuerySnapshot<Map<String, dynamic>>;
-      final usersSnapshot = results[2] as QuerySnapshot<Map<String, dynamic>>;
+      final userDoc = results[0];
+      final statsDoc = results[1];
 
       String fetchedUserName = 'مستخدم';
 
@@ -70,52 +56,19 @@ class _DonorHomePageState extends State<DonorHomePage> {
         fetchedUserName = fullName.isEmpty ? 'مستخدم' : fullName;
       }
 
-      final Set<String> publishedDonorIds = {};
-      int totalDeliveredItems = 0;
+      final stats = statsDoc.data() ?? {};
 
-      for (final doc in donationsSnapshot.docs) {
-        final data = doc.data();
-
-        final status = (data['status'] ?? '').toString().trim().toLowerCase();
-
-        final donorId =
-            (data['donorID'] ?? data['donorId'] ?? data['userId'] ?? '')
-                .toString()
-                .trim();
-
-        if (status == 'published' && donorId.isNotEmpty) {
-          publishedDonorIds.add(donorId);
-        }
-
-        if (status == 'delivered') {
-          final value = data['numberOfItems'];
-
-          if (value is int) {
-            totalDeliveredItems += value;
-          } else if (value is double) {
-            totalDeliveredItems += value.toInt();
-          } else if (value is String) {
-            totalDeliveredItems += int.tryParse(value) ?? 0;
-          }
-        }
-      }
-
-      int beneficiariesCount = 0;
-
-      for (final doc in usersSnapshot.docs) {
-        final data = doc.data();
-        final role = (data['role'] ?? '').toString().trim().toLowerCase();
-
-        if (role == 'beneficiary' || role == 'مستفيد') {
-          beneficiariesCount++;
-        }
+      int readCount(String key) {
+        final value = stats[key];
+        if (value is num) return value.toInt();
+        return int.tryParse(value?.toString() ?? '') ?? 0;
       }
 
       setState(() {
         userName = fetchedUserName;
-        donorsCount = publishedDonorIds.length;
-        clothingCount = totalDeliveredItems ~/ 5;
-        familiesCount = beneficiariesCount;
+        donorsCount = readCount('donorsCount');
+        clothingCount = readCount('clothingCount');
+        familiesCount = readCount('familiesCount');
       });
     } catch (e) {
       debugPrint('Error loading home data: $e');
