@@ -184,8 +184,6 @@ class _OtpPageState extends State<OtpPage> {
       } else {
         await _failAndSignOut('نوع الحساب غير معروف');
       }
-    } on AccountLinkedElsewhereException {
-      await _failAndSignOut('رقم الجوال مستخدم مسبقاً');
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
@@ -242,12 +240,10 @@ class _OtpPageState extends State<OtpPage> {
     final uid = FirebaseAuth.instance.currentUser!.uid;
 
     await FirebaseFirestore.instance.collection('Users').doc(uid).set({
-      'userId': uid,
       'firstName': widget.firstName.trim(),
       'lastName': widget.lastName.trim(),
       'phone': PhoneUtils.toLocal(widget.phone),
       'role': 'donor',
-      'createdAt': FieldValue.serverTimestamp(),
     });
 
     if (!mounted) return;
@@ -280,23 +276,17 @@ class _OtpPageState extends State<OtpPage> {
     final batch = db.batch();
 
     batch.set(db.collection('Users').doc(uid), {
-      'userId': uid,
       'firstName': widget.firstName.trim(),
       'lastName': widget.lastName.trim(),
       'phone': PhoneUtils.toLocal(widget.phone),
       'role': 'beneficiary',
-      'status': 'pending',
-      'isVerified': false,
-      'createdAt': FieldValue.serverTimestamp(),
     });
 
     batch.set(db.collection('beneficiaries').doc(uid), {
       'userId': uid,
       'socialSecurityNumber': socialSecurityNumber,
       'socialSecurityPdfUrl': pdfUrl,
-      'socialSecurityPdfPath': pdfPath,
       'status': 'pending',
-      'createdAt': FieldValue.serverTimestamp(),
     });
 
     try {
