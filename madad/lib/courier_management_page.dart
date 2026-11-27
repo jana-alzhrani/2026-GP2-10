@@ -118,21 +118,12 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
     final completedCount =
         donationsSnapshot.docs.length + requestsSnapshot.docs.length;
 
-    final courierSnapshot = await _firestore
-        .collection('couriers')
-        .where('userID', isEqualTo: userId)
-        .limit(1)
-        .get();
+    final courierRef = _firestore.collection('couriers').doc(userId);
+    final courierDoc = await courierRef.get();
 
-    if (courierSnapshot.docs.isNotEmpty) {
-      final courierDoc = courierSnapshot.docs.first;
-      final currentCount = courierDoc.data()['completedDeliveries'];
-
-      if (currentCount != completedCount) {
-        await courierDoc.reference.update({
-          'completedDeliveries': completedCount,
-        });
-      }
+    if (courierDoc.exists &&
+        courierDoc.data()?['completedDeliveries'] != completedCount) {
+      await courierRef.update({'completedDeliveries': completedCount});
     }
 
     return completedCount;
@@ -183,17 +174,13 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
 
       final batch = _firestore.batch();
 
-      batch.update(courierRef, {
-        'status': 'deleted',
-        'deletedAt': FieldValue.serverTimestamp(),
-      });
+      if (userId.isEmpty) {
+        batch.delete(courierRef);
+      } else {
+        batch.update(courierRef, {'status': 'deleted'});
+      }
 
       if (userId.isNotEmpty) {
-        batch.set(_firestore.collection('Users').doc(userId), {
-          'status': 'deleted',
-          'deletedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
         for (final collection in ['donations', 'requests']) {
           final tasksSnap = await _firestore
               .collection(collection)
@@ -205,7 +192,8 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
             batch.update(taskDoc.reference, {
               'courierId': FieldValue.delete(),
               'courierTaskStatus': FieldValue.delete(),
-              'acceptedAt': FieldValue.delete(),
+              if (collection == 'donations')
+                'updatedAt': FieldValue.serverTimestamp(),
             });
 
             final boxesSnap = await _firestore
@@ -327,7 +315,39 @@ class _CourierManagementPageState extends State<CourierManagementPage> {
                         final status = _getStatus(data);
 
                         if (userId.isEmpty) {
-                          return _buildInvalidCourierCard(doc.id, status);
+                          final pendingPhone = (data['phone'] ?? '').toString();
+
+                          if (pendingPhone.isEmpty) {
+                            return _buildInvalidCourierCard(doc.id, status);
+                          }
+
+                          final pendingName =
+                              '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'
+                                  .trim();
+
+                          final matchesPending =
+                              _searchQuery.isEmpty ||
+                              pendingName.toLowerCase().contains(
+                                _searchQuery,
+                              ) ||
+                              _normalizePhone(
+                                pendingPhone,
+                              ).contains(_normalizePhone(_searchQuery));
+
+                          if (!matchesPending) {
+                            return const SizedBox.shrink();
+                          }
+
+                          return _buildCourierCard(
+                            courierId: doc.id,
+                            userId: '',
+                            courierName: pendingName.isEmpty
+                                ? 'اسم غير متوفر'
+                                : pendingName,
+                            phone: pendingPhone,
+                            status: status,
+                            completedDeliveries: 0,
+                          );
                         }
 
                         return FutureBuilder<
