@@ -5,26 +5,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_design.dart';
 
-/// Shared edit sheet for donor / beneficiary / courier.
-/// Name + phone editing, phone change verified by OTP (Firebase Auth).
-/// Phone change is blocked while the user has active work assigned to a courier.
-///
-/// Usage:
-/// final result = await showModalBottomSheet<Map<String, String>>(
-///   context: context,
-///   isScrollControlled: true,
-///   backgroundColor: Colors.transparent,
-///   builder: (_) => ProfileEditSheet(
-///     userId: widget.userId,
-///     role: 'donor', // or 'beneficiary' / 'courier'
-///     firstName: firstName,
-///     lastName: lastName,
-///     phone: phone,
-///   ),
-/// );
 class ProfileEditSheet extends StatefulWidget {
   final String userId;
-  final String role; // 'donor' | 'beneficiary' | 'courier'
+  final String role;
   final String firstName;
   final String lastName;
   final String phone;
@@ -60,12 +43,9 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
   bool _saving = false;
   String? _error;
 
-  // true after the phone was updated in Firebase Auth; if the Firestore save
-  // then fails we retry Firestore only (the OTP was already consumed).
   bool _authPhoneUpdated = false;
   String? _pendingLocalPhone;
 
-  // Auth UID when the sheet opened (may differ from the Firestore doc ID).
   String? _authUidAtOpen;
 
   @override
@@ -140,26 +120,6 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
     });
   }
 
-  Future<bool> _phoneAlreadyUsed(
-    String localPhone,
-    String internationalPhone,
-  ) async {
-    final users = FirebaseFirestore.instance.collection('Users');
-    final values = [localPhone, internationalPhone];
-
-    final checks = await Future.wait([
-      users.where('phone', whereIn: values).limit(2).get(),
-      users.where('phoneNumber', whereIn: values).limit(2).get(),
-    ]);
-
-    for (final result in checks) {
-      if (result.docs.any((doc) => doc.id != widget.userId)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   User _requireCurrentUser() {
     final authUser = FirebaseAuth.instance.currentUser;
     if (authUser == null ||
@@ -170,7 +130,6 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
     return authUser;
   }
 
-  // Throws an Exception with the user-facing message if there is active work.
   Future<void> _ensureNoActiveWork() async {
     final reason = await PhoneChangeGuard.blockReason(
       role: widget.role,
@@ -222,7 +181,6 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
     final localPhone = _toLocalPhone(_phoneCtrl.text);
     final oldPhone = _normalizePhone(widget.phone);
 
-    // Phone unchanged -> just save the name (no check needed).
     if (internationalPhone == oldPhone) {
       await _saveWithoutPhoneChange();
       return;
@@ -236,17 +194,7 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
     try {
       _requireCurrentUser();
 
-      // Block the change if there is active work assigned to a courier.
       await _ensureNoActiveWork();
-
-      if (!resend && await _phoneAlreadyUsed(localPhone, internationalPhone)) {
-        if (!mounted) return;
-        setState(() {
-          _sending = false;
-          _error = 'رقم الجوال مرتبط بحساب آخر';
-        });
-        return;
-      }
 
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: internationalPhone,
@@ -339,7 +287,6 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
     }
   }
 
-  // Step 1: update the phone number in Firebase Auth
   Future<void> _completePhoneUpdate(
     PhoneAuthCredential credential,
     String localPhone,
@@ -357,8 +304,6 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
       final authUser = _requireCurrentUser();
 
       if (!_authPhoneUpdated) {
-        // Last check right before the number really changes
-        // (the state may have changed while the OTP was being entered).
         await _ensureNoActiveWork();
         await authUser.updatePhoneNumber(credential);
         _authPhoneUpdated = true;
@@ -385,7 +330,6 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
     await _saveProfileToFirestore();
   }
 
-  // Step 2: save to Firestore (only after Auth succeeded)
   Future<void> _saveProfileToFirestore() async {
     if (!mounted) return;
 
@@ -436,7 +380,6 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
     }
   }
 
-  // Retry the Firestore save only, without a new code
   Future<void> _retryProfileSave() async {
     if (_saving) return;
     setState(() {
@@ -713,19 +656,9 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
   }
 }
 
-// ======================================================
-// PhoneChangeGuard: blocks phone change while active work exists
-// ======================================================
-
-/// Blocks phone-number changes while the user has active work tied to a courier:
-/// - donor        -> an active donation assigned to a courier
-/// - beneficiary  -> an active request assigned to a courier
-/// - courier      -> an active task (donation or request) assigned to them
 class PhoneChangeGuard {
   PhoneChangeGuard._();
 
-  // Any of these values (in courierTaskStatus or status) means the work is over.
-  // Adjust to match the exact status strings used in your app.
   static const Set<String> _finished = {
     'completed',
     'delivered',
@@ -737,9 +670,12 @@ class PhoneChangeGuard {
 
   static bool _isActive(Map<String, dynamic> data) {
     final courierId = (data['courierId'] ?? '').toString().trim();
-    if (courierId.isEmpty) return false; // not assigned to a courier
+    if (courierId.isEmpty) return false;
 
-    final task = (data['courierTaskStatus'] ?? '').toString().trim().toLowerCase();
+    final task = (data['courierTaskStatus'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
     final status = (data['status'] ?? '').toString().trim().toLowerCase();
 
     return !_finished.contains(task) && !_finished.contains(status);
@@ -750,10 +686,8 @@ class PhoneChangeGuard {
     return snap.docs.any((d) => _isActive(d.data()));
   }
 
-  /// Returns an Arabic message if the number can NOT be changed, or null if allowed.
-  /// Throws if the check itself fails (so we never allow a change unchecked).
   static Future<String?> blockReason({
-    required String role, // 'donor' | 'beneficiary' | 'courier'
+    required String role,
     required String userId,
   }) async {
     final db = FirebaseFirestore.instance;
@@ -766,7 +700,7 @@ class PhoneChangeGuard {
           );
           return active
               ? 'لا يمكنك تغيير رقم الجوال لوجود تبرع نشط مسند إلى مندوب. '
-                  'يمكنك التغيير بعد اكتمال التبرع أو إلغاء إسناده للمندوب.'
+                    'يمكنك التغيير بعد اكتمال التبرع أو إلغاء إسناده للمندوب.'
               : null;
 
         case 'beneficiary':
@@ -775,7 +709,7 @@ class PhoneChangeGuard {
           );
           return active
               ? 'لا يمكنك تغيير رقم الجوال لوجود طلب نشط مسند إلى مندوب. '
-                  'يمكنك التغيير بعد اكتمال الطلب أو إلغاء إسناده للمندوب.'
+                    'يمكنك التغيير بعد اكتمال الطلب أو إلغاء إسناده للمندوب.'
               : null;
 
         case 'courier':
@@ -789,7 +723,7 @@ class PhoneChangeGuard {
           ]);
           return results.any((r) => r)
               ? 'لا يمكنك تغيير رقم الجوال لوجود مهمة نشطة مسندة إليك. '
-                  'يمكنك التغيير بعد اكتمال المهمة أو إلغاء إسنادها.'
+                    'يمكنك التغيير بعد اكتمال المهمة أو إلغاء إسنادها.'
               : null;
 
         default:
