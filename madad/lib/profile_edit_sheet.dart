@@ -348,7 +348,6 @@ class _ProfileEditSheetState extends State<ProfileEditSheet> {
             'firstName': first,
             'lastName': last,
             'phone': localPhone,
-            'phoneUpdatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
       try {
