@@ -1,12 +1,13 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'auth_service.dart';
 import 'otp_page.dart';
 
 class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key});
+
   @override
-  _SignUpPageState createState() => _SignUpPageState();
+  State<SignUpPage> createState() => _SignUpPageState();
 }
 
 class _SignUpPageState extends State<SignUpPage> {
@@ -18,141 +19,89 @@ class _SignUpPageState extends State<SignUpPage> {
   String? lastNameError;
   String? phoneError;
 
-  Timer? _debouncePhone;
+  bool _isSending = false;
 
-  Future<void> sendPhoneOTP(String phoneNumber) async {
-    String formattedPhone;
+  String? _validateName(String value) {
+    final name = value.trim();
+    if (name.isEmpty) return 'الرجاء تعبئة الحقل';
+    if (name.length < 2 || name.length > 50) {
+      return 'يجب أن يكون الاسم بين 2 و 50 حرف';
+    }
+    return null;
+  }
 
-    if (phoneNumber.startsWith('05')) {
-      formattedPhone = '+966${phoneNumber.substring(1)}';
-    } else if (phoneNumber.startsWith('5')) {
-      formattedPhone = '+966$phoneNumber';
-    } else if (phoneNumber.startsWith('+966')) {
-      formattedPhone = phoneNumber;
-    } else {
-      formattedPhone = '+966$phoneNumber';
+  String? _validatePhone(String value) {
+    final phoneNumber = value.trim();
+    if (phoneNumber.isEmpty) return 'الرجاء تعبئة الحقل';
+    if (!PhoneUtils.isValidLocal(phoneNumber)) return 'رقم الجوال غير صحيح';
+    return null;
+  }
+
+  Future<void> signup() async {
+    if (_isSending) return;
+
+    FocusScope.of(context).unfocus();
+
+    final newFirstNameError = _validateName(firstName.text);
+    final newLastNameError = _validateName(lastName.text);
+    final newPhoneError = _validatePhone(phone.text);
+
+    setState(() {
+      firstNameError = newFirstNameError;
+      lastNameError = newLastNameError;
+      phoneError = newPhoneError;
+    });
+
+    if (newFirstNameError != null ||
+        newLastNameError != null ||
+        newPhoneError != null) {
+      return;
     }
 
-    await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: formattedPhone,
+    _isSending = true;
 
-      verificationCompleted: (_) {},
+    final phoneNumber = phone.text.trim();
 
-      verificationFailed: (e) {
-        print('ERROR CODE: ${e.code}');
-        print('ERROR MSG: ${e.message}');
-
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.message ?? 'فشل إرسال الكود')));
-      },
-
-      codeSent: (verificationId, _) {
+    await AuthService.sendCode(
+      phone: phoneNumber,
+      onCodeSent: (verificationId, resendToken) {
+        _isSending = false;
         if (!mounted) return;
 
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => OtpPage(
-              correctCode: verificationId,
+              verificationId: verificationId,
+              resendToken: resendToken,
               firstName: firstName.text.trim(),
               lastName: lastName.text.trim(),
-              phone: phone.text.trim(),
+              phone: phoneNumber,
               isLogin: false,
+              role: 'donor',
             ),
           ),
         );
       },
-
-      codeAutoRetrievalTimeout: (_) {},
-    );
-  }
-
-  Future<void> signup() async {
-    setState(() {
-      firstNameError = null;
-      lastNameError = null;
-      phoneError = null;
-    });
-
-    bool hasError = false;
-
-    // التحقق من الاسم الأول
-    if (firstName.text.trim().isEmpty) {
-      firstNameError = 'الرجاء تعبئة الحقل';
-      hasError = true;
-    } else if (firstName.text.trim().length < 2 ||
-        firstName.text.trim().length > 50) {
-      firstNameError = 'يجب أن يكون الاسم بين 2 و 50 حرف';
-      hasError = true;
-    }
-
-    // التحقق من الاسم الأخير
-    if (lastName.text.trim().isEmpty) {
-      lastNameError = 'الرجاء تعبئة الحقل';
-      hasError = true;
-    } else if (lastName.text.trim().length < 2 ||
-        lastName.text.trim().length > 50) {
-      lastNameError = 'يجب أن يكون الاسم بين 2 و 50 حرف';
-      hasError = true;
-    }
-
-    // التحقق من رقم الجوال
-    final phoneNumber = phone.text.trim();
-
-    if (phoneNumber.isEmpty) {
-      phoneError = 'الرجاء تعبئة الحقل';
-      hasError = true;
-    } else if (!RegExp(r'^05\d{8}$').hasMatch(phoneNumber)) {
-      phoneError = 'رقم الجوال غير صحيح';
-      hasError = true;
-    }
-
-    // التحقق من أن رقم الجوال غير مسجل مسبقًا
-    if (!hasError) {
-      try {
-        final phoneCheck = await FirebaseFirestore.instance
-            .collection('Users')
-            .where('phone', isEqualTo: phoneNumber)
-            .get();
-
-        if (phoneCheck.docs.isNotEmpty) {
-          phoneError = 'رقم الجوال مستخدم مسبقاً';
-          hasError = true;
-        }
-      } catch (e) {
+      onError: (error) {
+        _isSending = false;
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر التحقق من رقم الجوال، حاول مرة أخرى'),
+          SnackBar(
+            content: Text(
+              error is FirebaseAuthException
+                  ? (error.message ?? 'فشل إرسال الكود')
+                  : 'حدث خطأ أثناء إرسال رمز التحقق',
+            ),
           ),
         );
-        return;
-      }
-    }
-
-    if (hasError) {
-      setState(() {});
-      return;
-    }
-
-    try {
-      await sendPhoneOTP(phoneNumber);
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('حدث خطأ أثناء إرسال رمز التحقق')),
-      );
-    }
+      },
+    );
   }
 
   @override
   void dispose() {
-    _debouncePhone?.cancel();
     firstName.dispose();
     lastName.dispose();
     phone.dispose();
@@ -255,51 +204,15 @@ class _SignUpPageState extends State<SignUpPage> {
                   : TextInputType.name,
 
               onChanged: (value) {
-                if (controller == phone) {
-                  setState(() {
+                setState(() {
+                  if (controller == phone) {
                     phoneError = null;
-                  });
-
-                  _debouncePhone?.cancel();
-
-                  final phoneNumber = value.trim();
-
-                  if (!RegExp(r'^05\d{8}$').hasMatch(phoneNumber)) {
-                    return;
+                  } else if (controller == firstName) {
+                    firstNameError = null;
+                  } else if (controller == lastName) {
+                    lastNameError = null;
                   }
-
-                  _debouncePhone = Timer(
-                    const Duration(milliseconds: 500),
-                    () async {
-                      try {
-                        final result = await FirebaseFirestore.instance
-                            .collection('Users')
-                            .where('phone', isEqualTo: phoneNumber)
-                            .get();
-
-                        if (!mounted || phone.text.trim() != phoneNumber) {
-                          return;
-                        }
-
-                        setState(() {
-                          phoneError = result.docs.isNotEmpty
-                              ? 'رقم الجوال مستخدم مسبقاً'
-                              : null;
-                        });
-                      } catch (e) {
-                        debugPrint('Phone duplicate check failed: $e');
-                      }
-                    },
-                  );
-                } else {
-                  setState(() {
-                    if (controller == firstName) {
-                      firstNameError = null;
-                    } else if (controller == lastName) {
-                      lastNameError = null;
-                    }
-                  });
-                }
+                });
               },
 
               decoration: InputDecoration(
