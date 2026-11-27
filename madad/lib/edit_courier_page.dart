@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -27,6 +28,8 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
   String status = 'active';
 
+  String originalPhone = '';
+
   bool isLoading = true;
   bool isSaving = false;
 
@@ -47,17 +50,18 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
   Future<void> loadCourier() async {
     try {
-      final userDoc = await _firestore
-          .collection('Users')
-          .doc(widget.userId)
-          .get();
+      final isPending = widget.userId.isEmpty;
 
       final courierDoc = await _firestore
           .collection('couriers')
           .doc(widget.courierId)
           .get();
 
-      if (!userDoc.exists || !courierDoc.exists) {
+      final userDoc = isPending
+          ? null
+          : await _firestore.collection('Users').doc(widget.userId).get();
+
+      if (!courierDoc.exists || (userDoc != null && !userDoc.exists)) {
         if (!mounted) return;
 
         AppDesign.showErrorSnackBar(context, 'بيانات السائق غير موجودة');
@@ -66,8 +70,8 @@ class _EditCourierPageState extends State<EditCourierPage> {
         return;
       }
 
-      final userData = userDoc.data() as Map<String, dynamic>;
       final courierData = courierDoc.data() as Map<String, dynamic>;
+      final userData = userDoc?.data() ?? courierData;
 
       firstNameController.text = userData['firstName']?.toString() ?? '';
 
@@ -78,6 +82,8 @@ class _EditCourierPageState extends State<EditCourierPage> {
       if (phoneController.text.startsWith('+966')) {
         phoneController.text = '0${phoneController.text.substring(4)}';
       }
+
+      originalPhone = phoneController.text;
 
       cityController.text = 'Riyadh';
 
@@ -136,9 +142,17 @@ class _EditCourierPageState extends State<EditCourierPage> {
         return;
       }
 
-      final phoneUsedByAnotherUser = phoneCheck.docs.any(
-        (doc) => doc.id != widget.userId,
-      );
+      final pendingDoc = phone == widget.courierId
+          ? null
+          : await _firestore.collection('couriers').doc(phone).get();
+
+      if (!mounted || requestId != phoneCheckRequestId) {
+        return;
+      }
+
+      final phoneUsedByAnotherUser =
+          phoneCheck.docs.any((doc) => doc.id != widget.userId) ||
+          (pendingDoc?.exists ?? false);
 
       setState(() {
         phoneError = phoneUsedByAnotherUser ? 'رقم الجوال مسجل مسبقًا' : null;
@@ -202,9 +216,13 @@ class _EditCourierPageState extends State<EditCourierPage> {
           .where('phone', isEqualTo: phone)
           .get();
 
-      final phoneUsedByAnotherUser = phoneCheck.docs.any(
-        (doc) => doc.id != widget.userId,
-      );
+      final pendingDoc = phone == widget.courierId
+          ? null
+          : await _firestore.collection('couriers').doc(phone).get();
+
+      final phoneUsedByAnotherUser =
+          phoneCheck.docs.any((doc) => doc.id != widget.userId) ||
+          (pendingDoc?.exists ?? false);
 
       if (phoneUsedByAnotherUser) {
         if (!mounted) return;
@@ -240,19 +258,61 @@ class _EditCourierPageState extends State<EditCourierPage> {
 
       final batch = _firestore.batch();
 
-      final userRef = _firestore.collection('Users').doc(widget.userId);
-
-      batch.update(userRef, {
-        'firstName': firstName,
-        'lastName': lastName,
-        'phone': phone,
-      });
-
       final courierRef = _firestore
           .collection('couriers')
           .doc(widget.courierId);
 
-      batch.update(courierRef, {'status': status, 'city': city});
+      if (widget.userId.isEmpty) {
+        final courierData = {
+          'firstName': firstName,
+          'lastName': lastName,
+          'phone': phone,
+          'status': status,
+          'city': city,
+          'completedDeliveries': 0,
+        };
+
+        if (phone == widget.courierId) {
+          batch.update(courierRef, courierData);
+        } else {
+          batch.set(_firestore.collection('couriers').doc(phone), courierData);
+          batch.delete(courierRef);
+        }
+      } else {
+        if (phone != originalPhone) {
+          try {
+            await FirebaseFunctions.instanceFor(region: 'europe-west1')
+                .httpsCallable('changeCourierPhone')
+                .call({'userId': widget.userId, 'phone': phone});
+          } on FirebaseFunctionsException catch (e) {
+            debugPrint('Change Courier Phone Error: ${e.code} ${e.message}');
+
+            if (!mounted) return;
+
+            if (e.code == 'already-exists') {
+              setState(() {
+                phoneError = 'رقم الجوال مسجل مسبقًا';
+              });
+            } else {
+              AppDesign.showErrorSnackBar(
+                context,
+                'حدث خطأ أثناء تحديث بيانات السائق',
+              );
+            }
+
+            return;
+          }
+
+          originalPhone = phone;
+        }
+
+        batch.update(_firestore.collection('Users').doc(widget.userId), {
+          'firstName': firstName,
+          'lastName': lastName,
+        });
+
+        batch.update(courierRef, {'status': status, 'city': city});
+      }
 
       await batch.commit();
 
