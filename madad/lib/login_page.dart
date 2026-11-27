@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'auth_service.dart';
 import 'otp_page.dart';
 import 'app_design.dart';
 
@@ -8,7 +8,7 @@ class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
   @override
-  _LoginPageState createState() => _LoginPageState();
+  State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
@@ -16,93 +16,67 @@ class _LoginPageState extends State<LoginPage> {
   String? phoneError;
   String? generalError;
 
+  bool _isSending = false;
+
+  @override
+  void dispose() {
+    phoneController.dispose();
+    super.dispose();
+  }
+
   Future<void> login() async {
-    String phoneText = phoneController.text.trim();
+    if (_isSending) return;
+
+    final phoneText = phoneController.text.trim();
+
+    String? newPhoneError;
+
+    if (phoneText.isEmpty) {
+      newPhoneError = "الرجاء تعبئة الحقل";
+    } else if (!PhoneUtils.isValidLocal(phoneText)) {
+      newPhoneError = "رقم الجوال غير صحيح";
+    }
 
     setState(() {
-      phoneError = null;
+      phoneError = newPhoneError;
       generalError = null;
     });
 
-    bool hasError = false;
+    if (newPhoneError != null) return;
 
-    if (phoneText.isEmpty) {
-      phoneError = "الرجاء تعبئة الحقل";
-      hasError = true;
-    } else if (phoneText.length != 10 || !phoneText.startsWith('05')) {
-      phoneError = "رقم الجوال غير صحيح";
-      hasError = true;
-    }
+    _isSending = true;
 
-    if (hasError) {
-      setState(() {});
-      return;
-    }
+    await AuthService.sendCode(
+      phone: phoneText,
+      onCodeSent: (verificationId, resendToken) {
+        _isSending = false;
+        if (!mounted) return;
 
-    try {
-      var userCheck = await FirebaseFirestore.instance
-          .collection('Users')
-          .where('phone', isEqualTo: phoneText)
-          .get();
-
-      if (userCheck.docs.isEmpty) {
-        setState(() {
-          phoneError = "رقم الجوال غير مسجل";
-        });
-        return;
-      }
-
-      // الحساب موقوف (محذوف من الأدمن): لا نرسل كود التحقق
-      final accountStatus = (userCheck.docs.first.data()['status'] ?? '')
-          .toString()
-          .trim()
-          .toLowerCase();
-
-      if (accountStatus == 'deleted') {
-        setState(() {
-          phoneError = "تم إيقاف هذا الحساب";
-        });
-        return;
-      }
-
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phoneText.startsWith('0')
-            ? "+966${phoneText.substring(1)}"
-            : "+966$phoneText",
-
-        verificationCompleted: (_) {},
-
-        verificationFailed: (e) {
-          print(e.code);
-          print(e.message);
-
-          setState(() {
-            generalError = e.message ?? "فشل إرسال الكود";
-          });
-        },
-
-        codeSent: (verificationId, _) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OtpPage(
-                correctCode: verificationId,
-                firstName: '',
-                lastName: '',
-                phone: phoneText,
-                isLogin: true,
-              ),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OtpPage(
+              verificationId: verificationId,
+              resendToken: resendToken,
+              firstName: '',
+              lastName: '',
+              phone: phoneText,
+              isLogin: true,
             ),
-          );
-        },
+          ),
+        );
+      },
+      onError: (error) {
+        _isSending = false;
+        if (!mounted) return;
 
-        codeAutoRetrievalTimeout: (_) {},
-      );
-    } catch (e) {
-      setState(() {
-        generalError = "حدث خطأ، حاول مرة أخرى";
-      });
-    }
+        setState(() {
+          generalError = error is FirebaseAuthException
+              ? (error.message ?? "فشل إرسال الكود")
+              : "حدث خطأ، حاول مرة أخرى";
+        });
+      },
+    );
   }
 
   @override
@@ -112,7 +86,6 @@ class _LoginPageState extends State<LoginPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            //  الهيدر
             Stack(
               children: [
                 Container(
@@ -137,10 +110,7 @@ class _LoginPageState extends State<LoginPage> {
                           Navigator.canPop(context)) {
                         Navigator.pop(context);
                       } else {
-                        Navigator.pushReplacementNamed(
-                          context,
-                          '/',
-                        ); // old behavior
+                        Navigator.pushReplacementNamed(context, '/');
                       }
                     },
                   ),
@@ -173,7 +143,6 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
 
-                    // 📱 رقم الجوال
                     buildField(
                       "رقم الجوال",
                       phoneController,
