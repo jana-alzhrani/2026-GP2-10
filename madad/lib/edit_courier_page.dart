@@ -460,13 +460,10 @@ class _EditCourierPageState extends State<EditCourierPage> {
                         prefixIcon: Icon(Icons.circle_outlined),
                       ),
                       items: const [
-                        DropdownMenuItem(
-                          value: 'active',
-                          child: Text('Active'),
-                        ),
+                        DropdownMenuItem(value: 'active', child: Text('نشط')),
                         DropdownMenuItem(
                           value: 'inactive',
-                          child: Text('Inactive'),
+                          child: Text('غير نشط'),
                         ),
                       ],
                       onChanged: (value) {
