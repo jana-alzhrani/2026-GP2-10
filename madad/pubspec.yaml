@@ -9,14 +9,13 @@ environment:
 
 dependencies:
   url_launcher: ^6.3.0
-  pdf: ^3.10.4
-  printing: ^5.12.0
+  pdf: ^3.12.0
+  printing: ^5.13.1
   flutter:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
   image_picker: ^1.0.7
-  google_mlkit_image_labeling: ^0.10.0
   path_provider: ^2.1.2
   http: ^1.2.0
   google_generative_ai: ^0.4.5
@@ -25,22 +24,18 @@ dependencies:
 
   firebase_core: ^2.30.0
   cloud_firestore: ^4.17.5
-  cloud_functions: ^4.0.0
+  cloud_functions: ^4.7.6
   firebase_auth: ^4.17.0
   file_picker: ^8.0.0
   firebase_storage: ^11.7.7
   mobile_scanner: ^5.2.3
 
 
-
-
-  
-  geolocator: ^12.0.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
@@ -58,3 +53,11 @@ flutter:
           weight: 500
         - asset: assets/fonts/Tajawal-Bold.ttf
           weight: 700
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/logo.png"
+  min_sdk_android: 21
