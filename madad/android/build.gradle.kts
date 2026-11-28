@@ -1,14 +1,3 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.0.2'  
-        classpath 'com.google.gms:google-services:4.3.15' 
-    }
-}
-
 allprojects {
     repositories {
         google()
@@ -26,7 +15,15 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-
+subprojects {
+    afterEvaluate {
+        if (plugins.hasPlugin("com.android.library")) {
+            extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+                compileSdk = 35
+            }
+        }
+    }
+}
 subprojects {
     project.evaluationDependsOn(":app")
 }
