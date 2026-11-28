@@ -100,11 +100,17 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                   Text("يوجد لديك حساب؟", style: AppDesign.bodySecondaryStyle),
                   TextButton(
                     onPressed: () {
-                      Navigator.pushNamed(
-                        context,
-                        '/login',
-                        arguments: 'fromRoleSelection',
-                      );
+                      final from = ModalRoute.of(context)?.settings.arguments;
+
+                      if (from == 'fromLogin' && Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      } else {
+                        Navigator.pushNamed(
+                          context,
+                          '/login',
+                          arguments: 'fromRoleSelection',
+                        );
+                      }
                     },
                     child: const Text(
                       "تسجيل دخول",
