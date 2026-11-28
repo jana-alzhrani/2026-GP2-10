@@ -104,10 +104,7 @@ class _LoginPageState extends State<LoginPage> {
                   child: IconButton(
                     icon: Icon(Icons.arrow_forward, color: Colors.white),
                     onPressed: () {
-                      final from = ModalRoute.of(context)?.settings.arguments;
-
-                      if (from == 'fromRoleSelection' &&
-                          Navigator.canPop(context)) {
+                      if (Navigator.canPop(context)) {
                         Navigator.pop(context);
                       } else {
                         Navigator.pushReplacementNamed(context, '/');
@@ -185,7 +182,20 @@ class _LoginPageState extends State<LoginPage> {
                         const SizedBox(width: 4),
                         TextButton(
                           onPressed: () {
-                            Navigator.pushNamed(context, '/roleSelection');
+                            final from = ModalRoute.of(
+                              context,
+                            )?.settings.arguments;
+
+                            if (from == 'fromRoleSelection' &&
+                                Navigator.canPop(context)) {
+                              Navigator.pop(context);
+                            } else {
+                              Navigator.pushNamed(
+                                context,
+                                '/roleSelection',
+                                arguments: 'fromLogin',
+                              );
+                            }
                           },
                           style: TextButton.styleFrom(
                             foregroundColor: AppDesign.primary,
